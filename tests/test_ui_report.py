@@ -15,6 +15,7 @@ No test here calls the AI layer or opens a socket.
 
 from __future__ import annotations
 
+import itertools
 from decimal import Decimal
 
 import pytest
@@ -34,7 +35,8 @@ from models.schemas import (
     SpatialValidation,
 )
 from ui import layout, references, report as report_view
-from ui.pages_report import ARTIFACT_KEY
+from ui import pages_report
+from ui.pages_report import ARTIFACT_KEY, OUTPUT_DIR_KEY
 from workflow.state import WorkflowState, WorkflowStep
 
 PROJECT_ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
@@ -278,6 +280,18 @@ class FakeGenerator:
 def generator(monkeypatch, tmp_path) -> FakeGenerator:
     fake = FakeGenerator(tmp_path)
     monkeypatch.setattr(report_view.report_generator, "generate_report", fake)
+
+    # Each session asks ``ui.pages_report`` for its own temporary directory.
+    # Point those requests inside ``tmp_path`` so a test run leaves nothing
+    # behind, while keeping one distinct directory per session.
+    counter = itertools.count(1)
+
+    def fake_mkdtemp(*, prefix: str = "") -> str:
+        directory = tmp_path / f"{prefix}{next(counter)}"
+        directory.mkdir(parents=True, exist_ok=True)
+        return str(directory)
+
+    monkeypatch.setattr(pages_report, "mkdtemp", fake_mkdtemp, raising=True)
     return fake
 
 
@@ -416,6 +430,10 @@ def test_generating_finalizes_and_stores_an_artifact(generator) -> None:
     assert artifact.filename.endswith(".pdf")
     assert generator.calls[0]["result"] is state.result
 
+    # The file was written into this session's own directory rather than the
+    # shared default, which is what keeps two visitors apart.
+    assert generator.calls[0]["output_dir"] == at.session_state[OUTPUT_DIR_KEY]
+
 
 def test_the_download_button_is_offered_after_generation(generator) -> None:
     at = open_report_screen(fresh_app())
@@ -486,6 +504,42 @@ def test_generating_again_replaces_the_file_on_purpose(generator) -> None:
     second = at.session_state[ARTIFACT_KEY]
     assert second is not first
     assert second.result is state_of(at).result
+
+
+def test_two_sessions_with_the_same_room_name_do_not_share_a_file(generator) -> None:
+    """One visitor's PDF must be out of reach of another with the same room name.
+
+    The filename is derived from the room name, so a shared output directory
+    would let the second visitor overwrite the first visitor's file and then
+    download it. Each session now writes into its own directory; this asserts
+    both the directories and the files differ, and that the first visitor's
+    download still carries their own report.
+    """
+
+    first = open_report_screen(fresh_app())
+    first = click(first, GENERATE_LABEL)
+    first_artifact = first.session_state[ARTIFACT_KEY]
+
+    second = open_report_screen(fresh_app())
+    second = click(second, GENERATE_LABEL)
+    second_artifact = second.session_state[ARTIFACT_KEY]
+
+    # Same room, so the same user-facing filename ...
+    assert first_artifact.filename == second_artifact.filename
+    # ... but a separate file on disk, because each session has its own folder.
+    assert first_artifact.path.parent != second_artifact.path.parent
+    assert first_artifact.path != second_artifact.path
+
+    # Writing the second report left the first one untouched and still valid.
+    assert first_artifact.path.exists()
+    assert first_artifact.path.read_bytes().startswith(b"%PDF-")
+    assert first_artifact.path.read_bytes() != b""
+
+    # Both screens still offer their own download.
+    assert download_labels(first) == [DOWNLOAD_LABEL]
+    assert download_labels(second) == [DOWNLOAD_LABEL]
+    assert report_view.is_current(first_artifact, state_of(first)) is True
+    assert report_view.is_current(second_artifact, state_of(second)) is True
 
 
 # --------------------------------------------------------------------------- #

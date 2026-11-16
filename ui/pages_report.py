@@ -23,6 +23,8 @@ already computed.
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import mkdtemp
 from typing import Final
 
 from workflow.state import WorkflowStep
@@ -30,9 +32,16 @@ from workflow import state as workflow
 
 from ui import commits, report as report_view, session, theme
 from ui.shell import render_flash, render_shell_header, stage_eyebrow
+
 #: The artifact lives under its own session key so the workflow object stays the
 #: only holder of project data.
 ARTIFACT_KEY: Final[str] = "hm_report_artifact"
+
+#: Each browser session writes its PDF into its own temporary directory, so two
+#: visitors who happen to use the same room name cannot overwrite each other's
+#: file or download it. The directory is created on first use and reused for the
+#: rest of the session, which keeps the room-derived filename the screen promises.
+OUTPUT_DIR_KEY: Final[str] = "hm_report_output_dir"
 
 _GENERATE_LABEL: Final[str] = "Generate the PDF report"
 _REGENERATE_LABEL: Final[str] = "Generate the report again"
@@ -72,6 +81,28 @@ def _clear_artifact() -> None:
     import streamlit as st
 
     st.session_state.pop(ARTIFACT_KEY, None)
+
+
+def _session_output_dir() -> Path:
+    """This session's own report directory, created once and then reused.
+
+    A per-session directory is what keeps one visitor's PDF out of another's
+    reach. It is a temporary directory rather than one under the project so the
+    deployed application never writes into the checked-out repository, and so the
+    files do not accumulate across sessions. Regenerating a report in the same
+    session reuses the directory, so the file name the screen shows stays the
+    same; only a different session gets a different directory.
+    """
+
+    import streamlit as st
+
+    existing = st.session_state.get(OUTPUT_DIR_KEY)
+    if isinstance(existing, Path) and existing.is_dir():
+        return existing
+
+    directory = Path(mkdtemp(prefix="hometsy-report-"))
+    st.session_state[OUTPUT_DIR_KEY] = directory
+    return directory
 
 
 # --------------------------------------------------------------------------- #
@@ -170,7 +201,9 @@ def _generate(state) -> None:
         "moment and sends nothing to the AI model."
     ):
         try:
-            artifact = report_view.finalize_and_build(state)
+            artifact = report_view.finalize_and_build(
+                state, output_dir=_session_output_dir()
+            )
         except Exception as failure:  # noqa: BLE001 - never a traceback on screen
             _clear_artifact()
             session.set_flash(report_view.report_error_message(failure), tone="error")
@@ -306,4 +339,4 @@ def render() -> None:
     _render_navigation(state)
 
 
-__all__ = ["ARTIFACT_KEY", "render"]
+__all__ = ["ARTIFACT_KEY", "OUTPUT_DIR_KEY", "render"]
