@@ -25,15 +25,22 @@ from core.placement_engine import (
     STRATEGIES,
     LayoutCandidate,
     PlacementStatus,
+    _candidate_rects,
+    _dominant_wall,
+    _Request,
     apply_placements,
+    check_intent,
+    contact_length_cm,
     generate_layouts,
     place_furniture,
     rotation_candidates,
+    walls_touched,
 )
 from core.room_engine import EPS_CM, validate_room
 from core.spatial_engine import (
     DEFAULT_DOOR_CLEARANCE_CM,
     DEFAULT_WINDOW_CLEARANCE_CM,
+    Rect,
     effective_size_cm,
     opening_clearance_rect,
     rect_inside_room,
@@ -47,6 +54,7 @@ from models.schemas import (
     RoomInput,
     RoomType,
     Wall,
+    WallPreference,
 )
 
 CATALOG_PATH = Path(__file__).resolve().parents[1] / "data" / "furniture_catalog.json"
@@ -1161,3 +1169,789 @@ def test_custom_clearance_values_are_honoured(
     for footprint in result.footprints:
         assert rects_overlap(footprint.rect, door_zone) is False
         assert rects_overlap(footprint.rect, window_zone) is False
+
+
+# --------------------------------------------------------------------------- #
+# Structured layout intent
+# --------------------------------------------------------------------------- #
+#
+# The audited bedroom. These are the room, openings and basket of the report
+# that exposed the original gap: the concept asked for the desk at the east
+# window and the bed pushed toward the west wall, and the engine put the bed on
+# the east wall while the desk went south. Nothing here is hardcoded from that
+# run — every coordinate is produced by the engine under test.
+#
+# Room 440 wide (x) x 540 long (y), door north at x 65-145, window east at
+# y 130-300.
+
+
+def audited_bedroom() -> RoomInput:
+    return RoomInput(
+        room_type=RoomType.BEDROOM,
+        name="Audited bedroom",
+        width_cm=440.0,
+        length_cm=540.0,
+        ceiling_height_cm=275.0,
+        door=OpeningInput(wall=Wall.NORTH, offset_cm=65.0, width_cm=80.0),
+        window=OpeningInput(wall=Wall.EAST, offset_cm=130.0, width_cm=170.0),
+    )
+
+
+AUDITED_BASKET = (
+    "bed_single",
+    "desk",
+    "armchair",
+    "bookshelf",
+    "bedside_table",
+    "rug_large",
+    "table_lamp",
+    "floor_lamp",
+    "plant_large",
+)
+
+
+def audited_recommendations(
+    *, bed_wall: Wall | None = Wall.WEST, desk_wall: Wall | None = Wall.EAST
+) -> tuple[FurnitureRecommendation, ...]:
+    """The audited basket, with the two walls the concept actually named."""
+
+    return tuple(
+        FurnitureRecommendation(
+            item_id=item_id,
+            quantity=1,
+            preferred_wall=(
+                bed_wall
+                if item_id == "bed_single"
+                else desk_wall
+                if item_id == "desk"
+                else None
+            ),
+        )
+        for item_id in AUDITED_BASKET
+    )
+
+
+def footprint_of(result, item_id: str):
+    return next(f for f in result.footprints if f.item_id == item_id)
+
+
+def dominant_wall(footprint, room: RoomInput) -> Wall | None:
+    """The wall a footprint reads as belonging to, by longest contact.
+
+    Mirrors the engine's own rule rather than importing a private helper: a
+    corner footprint touches two walls, and the arrangement a reader would name
+    is the one with the longer contact.
+    """
+
+    touching = walls_touched(footprint.rect, room)
+    if not touching:
+        return None
+    return max(touching, key=lambda wall: contact_length_cm(footprint.rect, room, wall))
+
+
+def test_preferred_wall_places_the_bed_and_desk_on_their_walls(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The rejected design direction is now achievable and calculated."""
+
+    room = audited_bedroom()
+    recommendations = audited_recommendations()
+
+    result = place_furniture(room, recommendations, catalogue)
+
+    assert result.status is PlacementStatus.COMPLETE
+    assert len(result.footprints) == len(AUDITED_BASKET)
+    accepts_layout(room, result.candidate, catalogue)
+
+    bed = footprint_of(result, "bed_single")
+    desk = footprint_of(result, "desk")
+
+    # The bed lies along the west wall as its dominant contact. A corner that
+    # merely grazes the wall would not count, which is the point of the check.
+    assert dominant_wall(bed, room) is Wall.WEST
+    assert contact_length_cm(bed.rect, room, Wall.WEST) == pytest.approx(
+        max(bed.width_cm, bed.depth_cm)
+    )
+
+    assert dominant_wall(desk, room) is Wall.EAST
+
+
+def test_all_four_strategies_agree_on_intent(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """Intent is a constraint, so the wall order must not change the verdict."""
+
+    room = audited_bedroom()
+    recommendations = audited_recommendations()
+
+    verdicts = []
+    for candidate in generate_layouts(room, recommendations, catalogue):
+        assert candidate.placed_count == len(AUDITED_BASKET)
+        accepts_layout(room, candidate, catalogue)
+        compatibility = check_intent(
+            room, recommendations, tuple(candidate.footprints)
+        )
+        verdicts.append(
+            (compatibility.satisfied_count, compatibility.unmet_count)
+        )
+
+    assert len(verdicts) == len(STRATEGIES)
+    assert set(verdicts) == {(2, 0)}
+
+
+def test_intent_compatibility_is_separate_from_the_geometric_score(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """A score is geometry; compatibility is whether the design was honoured."""
+
+    room = audited_bedroom()
+    recommendations = audited_recommendations()
+    result = place_furniture(room, recommendations, catalogue)
+
+    compatibility = check_intent(
+        room, recommendations, result.footprints
+    )
+
+    # Both are reported, from the same run, and neither is derived from the
+    # other: the score is a weighted sum of the six declared layout criteria.
+    assert result.candidate.score == pytest.approx(
+        sum(c.weight * c.value for c in result.candidate.components)
+    )
+    assert {c.name for c in result.candidate.components} == set(LAYOUT_WEIGHTS)
+    # No intent term exists in the layout weights.
+    assert "concept_compatibility" not in LAYOUT_WEIGHTS
+
+    assert compatibility.is_fully_satisfied is True
+    assert compatibility.satisfied_count == 2
+    # And the score is not the compatibility count.
+    assert result.candidate.score != float(compatibility.satisfied_count)
+
+
+def impossible_wall_room() -> RoomInput:
+    """A room whose south wall is entirely inside the door clearance zone.
+
+    The door spans x 40-280 of a 320 cm wide wall, and the 60 cm clearance on
+    each side pushes the zone past both corners, so no footprint can be flush
+    against the south wall at all — not even a small one. That makes "the
+    requested wall is impossible" a geometric fact rather than a guess.
+    """
+
+    return hidden_room(
+        320.0,
+        300.0,
+        door_wall=Wall.SOUTH,
+        door_offset_cm=40.0,
+        door_width_cm=240.0,
+    )
+
+
+def test_preferred_wall_falls_back_to_another_wall(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """A merely preferred wall may be missed; the item is still placed."""
+
+    room = impossible_wall_room()
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="wardrobe", quantity=1, preferred_wall=Wall.SOUTH
+        ),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+
+    assert result.status is PlacementStatus.COMPLETE
+    assert len(result.footprints) == 1
+    placed = footprint_of(result, "wardrobe")
+    assert Wall.SOUTH not in walls_touched(placed.rect, room)
+
+    compatibility = check_intent(room, recommendations, result.footprints)
+    check = compatibility.checks[0]
+    assert check.satisfied is False
+    assert check.preferred_wall is Wall.SOUTH
+    assert check.note  # the actual wall is named
+
+
+def test_required_wall_that_cannot_be_met_is_reported_not_moved(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """``REQUIRED`` refuses the fallback, so the item is honestly unplaced."""
+
+    room = impossible_wall_room()
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="wardrobe",
+            quantity=1,
+            preferred_wall=Wall.SOUTH,
+            wall_priority=WallPreference.REQUIRED,
+        ),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+
+    assert result.status is PlacementStatus.FAILED
+    assert result.footprints == ()
+    assert [item.item_id for item in result.unplaced] == ["wardrobe"]
+    unplaced = result.unplaced[0]
+    assert unplaced.reason_code == "required_wall_unavailable"
+    assert "south wall" in unplaced.reason
+    assert "not moved to another wall" in unplaced.reason
+
+    # And the compatibility verdict never claims the wall was honoured.
+    compatibility = check_intent(room, recommendations, result.footprints)
+    assert compatibility.checks[0].satisfied is None
+    assert compatibility.satisfied_count == 0
+
+
+def test_a_required_wall_that_can_be_met_is_placed_there(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The constraint is not a blanket refusal; it is satisfied when possible."""
+
+    room = audited_bedroom()
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="bed_single",
+            quantity=1,
+            preferred_wall=Wall.WEST,
+            wall_priority=WallPreference.REQUIRED,
+        ),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+
+    assert result.status is PlacementStatus.COMPLETE
+    bed = footprint_of(result, "bed_single")
+    assert Wall.WEST in walls_touched(bed.rect, room)
+
+
+def test_a_preferred_item_that_cannot_be_placed_anywhere_is_not_called_required(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The reason text must not claim a constraint the user never set.
+
+    A ``PREFERRED`` piece whose wall fails falls back to the whole floor. If
+    that also fails, the honest statement is "it did not fit anywhere", not
+    "the wall was required" — the latter would tell the user to change a
+    setting they never chose.
+
+    The reason builder is exercised directly because the wording is the defect:
+    reaching this branch through the engine would require an exact room where
+    both the wall search and the whole-floor search fail, which makes the test
+    about geometry rather than about the sentence it is guarding.
+    """
+
+    from core.placement_engine import _unplaced_code, _unplaced_reason
+
+    room = audited_bedroom()
+    request = _Request(
+        index=0,
+        item=next(i for i in catalogue if i.item_id == "wardrobe"),
+        quantity=1,
+        requested_rotation=0,
+        preferred_wall=Wall.EAST,
+        wall_priority=WallPreference.PREFERRED,
+    )
+
+    reason = _unplaced_reason(request, room, 4, 3.5)
+
+    assert "was required" not in reason
+    assert "east wall was preferred" in reason
+    assert "unrestricted search" in reason
+    assert _unplaced_code(request) == "no_valid_position"
+
+    # The required branch still states the constraint, because there it is true.
+    required = _Request(
+        index=0,
+        item=request.item,
+        quantity=1,
+        requested_rotation=0,
+        preferred_wall=Wall.EAST,
+        wall_priority=WallPreference.REQUIRED,
+    )
+    required_reason = _unplaced_reason(required, room, 4, 3.5)
+    assert "was required, so the item was not moved to another wall" in (
+        required_reason
+    )
+    assert _unplaced_code(required) == "required_wall_unavailable"
+
+
+def test_grid_sweep_is_skipped_during_a_preferred_wall_attempt(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The restriction is a candidate-set change, not a wall reordering.
+
+    This is the regression that guards the original trap: passing a shorter
+    ``wall_order`` still produced every interior grid position, so a
+    free-standing spot could win and the preference silently did nothing.
+    """
+
+    room = audited_bedroom()
+    item = next(i for i in catalogue if i.item_id == "bed_single")
+    request = _Request(
+        index=0,
+        item=item,
+        quantity=1,
+        requested_rotation=0,
+        preferred_wall=Wall.WEST,
+        wall_priority=WallPreference.PREFERRED,
+    )
+
+    restricted = list(
+        _candidate_rects(
+            room, request, (Wall.WEST,), walls_only=Wall.WEST
+        )
+    )
+    unrestricted = list(_candidate_rects(room, request, (Wall.WEST,)))
+
+    assert restricted, "the restricted search must still offer candidates"
+    # Every restricted candidate is flush against the requested wall.
+    for _rotation, rect in restricted:
+        assert rect.left_cm <= EPS_CM
+
+    # And the interior grid positions the unrestricted search offers are absent.
+    interior = [
+        rect
+        for _rotation, rect in unrestricted
+        if rect.left_cm > EPS_CM
+        and abs(rect.right_cm - room.width_cm) > EPS_CM
+        and rect.bottom_cm > EPS_CM
+        and abs(rect.top_cm - room.length_cm) > EPS_CM
+    ]
+    assert interior, "the unrestricted search should offer interior positions"
+    restricted_geometry = {
+        (rect.left_cm, rect.bottom_cm) for _rotation, rect in restricted
+    }
+    assert not any(
+        (rect.left_cm, rect.bottom_cm) in restricted_geometry for rect in interior
+    )
+
+
+def test_wall_preference_ranks_a_wall_outside_the_order_last() -> None:
+    """The guard for the latent ``ValueError``.
+
+    A footprint flush against a wall absent from ``wall_order`` used to raise
+    ``tuple.index`` when the search was restricted to one preferred wall. It now
+    ranks last instead.
+    """
+
+    from core.placement_engine import _wall_preference
+    from core.spatial_engine import Rect
+
+    room = audited_bedroom()
+    # Flush against the south wall, while the order names only west and east.
+    south_footprint = Rect(120.0, 0.0, 200.0, 90.0)
+    value = _wall_preference(south_footprint, room, (Wall.WEST, Wall.EAST))
+    assert value == 0.0
+
+    # A wall that is in the order still scores above it.
+    west_footprint = Rect(0.0, 170.0, 90.0, 200.0)
+    assert _wall_preference(west_footprint, room, (Wall.WEST, Wall.EAST)) > value
+
+    # Every wall still in the order keeps the original behaviour.
+    full_order = (Wall.SOUTH, Wall.WEST, Wall.EAST, Wall.NORTH)
+    assert _wall_preference(south_footprint, room, full_order) == 1.0
+
+
+def test_no_intent_produces_the_layout_the_engine_always_produced(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """Backward compatibility: absent intent changes nothing at all."""
+
+    room = audited_bedroom()
+    plain = tuple(
+        FurnitureRecommendation(item_id=item_id, quantity=1)
+        for item_id in AUDITED_BASKET
+    )
+
+    first = place_furniture(room, plain, catalogue)
+    second = place_furniture(room, plain, catalogue)
+
+    assert first.footprints == second.footprints
+    assert first.status is PlacementStatus.COMPLETE
+    assert len(first.footprints) == len(AUDITED_BASKET)
+    # The audited run that motivated this work scored exactly this.
+    assert first.candidate.score == pytest.approx(0.976255, abs=1e-6)
+
+    compatibility = check_intent(room, plain, first.footprints)
+    assert compatibility.is_evaluated is False
+    assert "not assessed" in compatibility.note
+
+
+def test_intent_placement_is_deterministic(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """Same room, same basket, same walls: identical coordinates every time."""
+
+    room = audited_bedroom()
+    recommendations = audited_recommendations()
+
+    first = place_furniture(room, recommendations, catalogue)
+    second = place_furniture(room, recommendations, catalogue)
+
+    assert first.footprints == second.footprints
+    assert first.candidate == second.candidate
+    assert (
+        check_intent(room, recommendations, first.footprints)
+        == check_intent(room, recommendations, second.footprints)
+    )
+
+
+def test_intent_never_produces_an_invalid_layout(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The constraint narrows the search; it must not break the invariants."""
+
+    room = audited_bedroom()
+    recommendations = audited_recommendations()
+
+    result = place_furniture(room, recommendations, catalogue)
+
+    accepts_layout(room, result.candidate, catalogue)
+    door_zone = opening_clearance_rect(
+        room,
+        room.door.wall,
+        room.door.offset_cm,
+        room.door.width_cm,
+        DEFAULT_DOOR_CLEARANCE_CM,
+    )
+    for footprint in result.footprints:
+        assert rect_inside_room(footprint.rect, room) is True
+        assert rects_overlap(footprint.rect, door_zone) is False
+    for first in range(len(result.footprints)):
+        for second in range(first + 1, len(result.footprints)):
+            assert (
+                rects_overlap(
+                    result.footprints[first].rect,
+                    result.footprints[second].rect,
+                )
+                is False
+            )
+
+
+def test_check_intent_reports_an_unplaced_item_as_unassessed(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """Missing furniture is ``None``, never a satisfied preference."""
+
+    room = audited_bedroom()
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="bed_single", quantity=1, preferred_wall=Wall.WEST
+        ),
+    )
+
+    compatibility = check_intent(room, recommendations, ())
+
+    assert compatibility.checks[0].satisfied is None
+    assert compatibility.satisfied_count == 0
+    assert compatibility.unknown_count == 1
+    assert compatibility.is_fully_satisfied is False
+
+
+def test_apply_placements_preserves_intent(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """Coordinates are written onto the basket; the requested wall survives."""
+
+    room = audited_bedroom()
+    recommendations = audited_recommendations()
+    result = place_furniture(room, recommendations, catalogue)
+
+    written = apply_placements(recommendations, result)
+
+    for original, stored in zip(recommendations, written):
+        assert stored.preferred_wall is original.preferred_wall
+        assert stored.wall_priority is original.wall_priority
+    bed = next(item for item in written if item.item_id == "bed_single")
+    assert bed.preferred_wall is Wall.WEST
+    assert bed.position_x_cm is not None
+
+
+# --------------------------------------------------------------------------- #
+# Equal-contact ties: the requested wall decides, not the enum order
+# --------------------------------------------------------------------------- #
+#
+# A piece pushed into a corner touches two walls with equally long contacts, and
+# the rectangle alone cannot say which wall the concept meant. Before the fix
+# ``max()`` kept the first wall in the order ``walls_touched`` yields - ``WEST,
+# SOUTH, EAST, NORTH`` - so a requested tie was silently resolved to whichever
+# of the two walls happens to be declared first. These tests use rooms where the
+# engine really does produce such a corner, not a hand-built rectangle.
+
+
+def tie_room(*, door_wall: Wall, window_wall: Wall) -> RoomInput:
+    """A 150 x 150 bedroom small enough to force the armchair into a corner."""
+
+    return RoomInput(
+        room_type=RoomType.BEDROOM,
+        name="Corner tie",
+        width_cm=150.0,
+        length_cm=150.0,
+        ceiling_height_cm=270.0,
+        door=OpeningInput(wall=door_wall, offset_cm=5.0, width_cm=60.0),
+        window=OpeningInput(wall=window_wall, offset_cm=5.0, width_cm=60.0),
+    )
+
+
+def test_equal_west_and_north_contact_prefers_the_requested_west_wall(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """A west/north corner reads as west when west is what the concept asked for."""
+
+    room = tie_room(door_wall=Wall.WEST, window_wall=Wall.SOUTH)
+    recommendations = (
+        FurnitureRecommendation(item_id="armchair", preferred_wall=Wall.WEST),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+    assert result.status is PlacementStatus.COMPLETE
+    footprint = footprint_of(result, "armchair")
+
+    # The premise: a genuine tie, not an assumption about the layout.
+    assert set(walls_touched(footprint.rect, room)) == {Wall.WEST, Wall.NORTH}
+    assert contact_length_cm(footprint.rect, room, Wall.WEST) == contact_length_cm(
+        footprint.rect, room, Wall.NORTH
+    )
+    assert _dominant_wall(footprint.rect, room, Wall.WEST) is Wall.WEST
+    # The request only breaks the tie; it never invents a wall that is not touched.
+    assert _dominant_wall(footprint.rect, room, Wall.EAST) is Wall.WEST
+
+    compatibility = check_intent(room, recommendations, result.footprints)
+    check = compatibility.checks[0]
+    assert check.satisfied is True
+    assert check.note == ""
+    assert compatibility.is_fully_satisfied is True
+    assert set(check.actual_walls) == {Wall.WEST, Wall.NORTH}
+
+
+def test_equal_east_and_north_contact_prefers_the_requested_east_wall(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """Same tie on the other side: the request decides, not the declaration order."""
+
+    room = tie_room(door_wall=Wall.EAST, window_wall=Wall.SOUTH)
+    recommendations = (
+        FurnitureRecommendation(item_id="armchair", preferred_wall=Wall.EAST),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+    assert result.status is PlacementStatus.COMPLETE
+    footprint = footprint_of(result, "armchair")
+
+    assert set(walls_touched(footprint.rect, room)) == {Wall.EAST, Wall.NORTH}
+    assert contact_length_cm(footprint.rect, room, Wall.EAST) == contact_length_cm(
+        footprint.rect, room, Wall.NORTH
+    )
+    assert _dominant_wall(footprint.rect, room, Wall.EAST) is Wall.EAST
+
+    compatibility = check_intent(room, recommendations, result.footprints)
+    check = compatibility.checks[0]
+    assert check.satisfied is True
+    assert compatibility.is_fully_satisfied is True
+
+
+def test_a_tied_north_request_is_not_handed_to_the_earlier_wall(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The case the enum order really got wrong.
+
+    ``walls_touched`` yields ``WEST, SOUTH, EAST, NORTH``, so ``max()`` gave an
+    east/north tie to east. Asking for north and being told the piece is on east
+    - while the payload's own ``walls_actually_touched`` lists north - is the
+    contradiction this fixes.
+    """
+
+    room = tie_room(door_wall=Wall.SOUTH, window_wall=Wall.NORTH)
+    recommendations = (
+        FurnitureRecommendation(item_id="armchair", preferred_wall=Wall.NORTH),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+    assert result.status is PlacementStatus.COMPLETE
+    footprint = footprint_of(result, "armchair")
+
+    assert set(walls_touched(footprint.rect, room)) == {Wall.EAST, Wall.NORTH}
+    assert contact_length_cm(footprint.rect, room, Wall.EAST) == contact_length_cm(
+        footprint.rect, room, Wall.NORTH
+    )
+    # Untouched by the request, the order still decides - north is last.
+    assert _dominant_wall(footprint.rect, room) is Wall.EAST
+    # The request flips that tie to the wall the concept named.
+    assert _dominant_wall(footprint.rect, room, Wall.NORTH) is Wall.NORTH
+
+    check = check_intent(room, recommendations, result.footprints).checks[0]
+    assert check.satisfied is True
+    assert check.note == ""
+
+
+def test_a_shorter_requested_contact_is_still_not_satisfied(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The tie-break must not turn a corner graze into a met intent.
+
+    In the audited 200 x 200 room the bed lies along the north wall with 200 cm
+    of contact and touches west with only 90. Asking for west is a real miss, and
+    the fix must not paper over it.
+    """
+
+    room = RoomInput(
+        room_type=RoomType.BEDROOM,
+        name="200 x 200",
+        width_cm=200.0,
+        length_cm=200.0,
+        ceiling_height_cm=270.0,
+        door=OpeningInput(wall=Wall.SOUTH, offset_cm=5.0, width_cm=80.0),
+        window=OpeningInput(wall=Wall.NORTH, offset_cm=5.0, width_cm=60.0),
+    )
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="bed_single",
+            preferred_wall=Wall.WEST,
+            wall_priority=WallPreference.REQUIRED,
+        ),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+    assert result.status is PlacementStatus.COMPLETE
+    footprint = footprint_of(result, "bed_single")
+
+    west_cm = contact_length_cm(footprint.rect, room, Wall.WEST)
+    north_cm = contact_length_cm(footprint.rect, room, Wall.NORTH)
+    assert Wall.WEST in walls_touched(footprint.rect, room)
+    assert west_cm < north_cm
+
+    assert _dominant_wall(footprint.rect, room, Wall.WEST) is Wall.NORTH
+
+    check = check_intent(room, recommendations, result.footprints).checks[0]
+    assert check.satisfied is False
+    assert check.note == "Requested west, placed north instead."
+
+
+def test_strict_dominance_is_unaffected_by_the_requested_wall() -> None:
+    """Only ties consult the request; a longer contact always wins."""
+
+    room = audited_bedroom()
+    # Flush along west for its full 200 cm depth, and along south for 90 cm.
+    footprint = Rect(0.0, 0.0, 90.0, 200.0)
+    assert walls_touched(footprint, room) == (Wall.WEST, Wall.SOUTH)
+
+    # Asking for the shorter wall does not promote it...
+    assert _dominant_wall(footprint, room, Wall.SOUTH) is Wall.WEST
+    # ...and asking for the longer one changes nothing either.
+    assert _dominant_wall(footprint, room, Wall.WEST) is Wall.WEST
+    # A wall the footprint does not touch is not a candidate.
+    assert _dominant_wall(footprint, room, Wall.EAST) is Wall.WEST
+
+
+def test_dominant_wall_is_deterministic_across_repeated_calls(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The tie-break is a rule, not an accident of iteration order."""
+
+    room = tie_room(door_wall=Wall.SOUTH, window_wall=Wall.NORTH)
+    recommendations = (
+        FurnitureRecommendation(item_id="armchair", preferred_wall=Wall.NORTH),
+    )
+    result = place_furniture(room, recommendations, catalogue)
+    rect = footprint_of(result, "armchair").rect
+
+    asked = {_dominant_wall(rect, room, Wall.NORTH) for _ in range(20)}
+    unasked = {_dominant_wall(rect, room) for _ in range(20)}
+    assert asked == {Wall.NORTH}
+    assert unasked == {Wall.EAST}
+
+    verdicts = [
+        check_intent(room, recommendations, result.footprints)
+        for _ in range(5)
+    ]
+    assert all(verdict == verdicts[0] for verdict in verdicts)
+    assert verdicts[0].checks[0].satisfied is True
+
+
+def test_an_unplaced_intent_row_uses_the_catalog_label(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """A row that reports a failure must not be the one showing ``bedside_table``.
+
+    The room's south wall is entirely inside the door clearance, so a REQUIRED
+    south intent cannot be met. The placed branch reads its label from the
+    footprint; this branch has no footprint, so it must read the catalogue.
+    """
+
+    room = RoomInput(
+        room_type=RoomType.BEDROOM,
+        name="Blocked south wall",
+        width_cm=320.0,
+        length_cm=300.0,
+        ceiling_height_cm=270.0,
+        door=OpeningInput(wall=Wall.SOUTH, offset_cm=0.0, width_cm=320.0),
+        window=OpeningInput(wall=Wall.NORTH, offset_cm=10.0, width_cm=70.0),
+    )
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="bedside_table",
+            preferred_wall=Wall.SOUTH,
+            wall_priority=WallPreference.REQUIRED,
+        ),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+    assert result.status is PlacementStatus.FAILED
+    assert result.footprints == ()
+    assert [item.item_id for item in result.unplaced] == ["bedside_table"]
+
+    compatibility = check_intent(
+        room, recommendations, result.footprints, catalog=catalogue
+    )
+    check = compatibility.checks[0]
+    assert check.label == "Bedside table"
+    assert check.item_id == "bedside_table"
+    assert check.satisfied is None
+
+    # The same rows appear on the plan screen, which goes through this seam.
+    from ui.layout import analyse_layout
+
+    analysis = analyse_layout(room, recommendations, catalogue)
+    assert analysis.compatibility.checks[0].label == "Bedside table"
+
+
+def test_the_unplaced_label_prefers_the_catalog_name_over_a_humanised_id(
+    catalogue: tuple[FurnitureItem, ...],
+) -> None:
+    """The catalogue is authoritative; the humanised identifier is a fallback.
+
+    ``bed_single`` is catalogued as "Single bed", so the two sources disagree in
+    a way a test can see. Only the catalogue spelling belongs in a report.
+    """
+
+    room = RoomInput(
+        room_type=RoomType.BEDROOM,
+        name="Blocked south wall",
+        width_cm=320.0,
+        length_cm=300.0,
+        ceiling_height_cm=270.0,
+        door=OpeningInput(wall=Wall.SOUTH, offset_cm=0.0, width_cm=320.0),
+        window=OpeningInput(wall=Wall.NORTH, offset_cm=10.0, width_cm=70.0),
+    )
+    recommendations = (
+        FurnitureRecommendation(
+            item_id="bed_single",
+            preferred_wall=Wall.SOUTH,
+            wall_priority=WallPreference.REQUIRED,
+        ),
+    )
+
+    result = place_furniture(room, recommendations, catalogue)
+    assert result.status is PlacementStatus.FAILED
+    assert result.footprints == ()
+
+    with_catalog = check_intent(
+        room, recommendations, result.footprints, catalog=catalogue
+    ).checks[0]
+    assert with_catalog.label == "Single bed"
+    # Absent a catalogue the identifier is humanised, never left raw.
+    assert (
+        check_intent(room, recommendations, result.footprints).checks[0].label
+        == "Bed single"
+    )
+    assert with_catalog.label != "bed_single"

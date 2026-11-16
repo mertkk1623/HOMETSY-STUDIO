@@ -95,6 +95,24 @@ class PlacementStatus(str, Enum):
     FAILED = "failed"
 
 
+class WallPreference(str, Enum):
+    """How binding a piece's preferred wall is.
+
+    ``PREFERRED`` is a design wish: the engine searches that wall first and
+    falls back to the rest of the room when geometry makes it impossible, so
+    the item is still placed. ``REQUIRED`` is a constraint: if the requested
+    wall cannot host the piece, the piece is reported as unplaced rather than
+    quietly moved somewhere the concept did not ask for.
+
+    The default is ``PREFERRED`` because a design concept describes a direction,
+    not a hard requirement, and silently losing furniture would be a worse
+    outcome than a slightly different-but-honest plan.
+    """
+
+    PREFERRED = "preferred"
+    REQUIRED = "required"
+
+
 #: Non-negative money amount with at most two decimal places.
 Money = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
 
@@ -300,6 +318,12 @@ class FurnitureRecommendation(_BaseModel):
     entry; when it is empty only the single pair is meaningful. A partial layout
     has fewer positions than ``quantity``, and the copies that are missing are
     reported rather than invented.
+
+    ``preferred_wall`` is the one spatial statement the advisor is allowed to
+    make: a wall name, never a coordinate. The engine decides the position along
+    that wall, the rotation, and whether the request can be met at all. It is
+    ``None`` by default, and an absent preference is exactly the pre-intent
+    behaviour.
     """
 
     item_id: Annotated[str, Field(min_length=1, max_length=60)]
@@ -311,6 +335,8 @@ class FurnitureRecommendation(_BaseModel):
         default_factory=list
     )
     rationale: Annotated[str, Field(max_length=500)] = ""
+    preferred_wall: Wall | None = None
+    wall_priority: WallPreference = WallPreference.PREFERRED
 
     @model_validator(mode="after")
     def _positions_never_exceed_quantity(self) -> FurnitureRecommendation:
@@ -318,6 +344,26 @@ class FurnitureRecommendation(_BaseModel):
             raise ValueError(
                 f"'{self.item_id}' has {len(self.positions)} placed positions "
                 f"but a quantity of {self.quantity}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _required_wall_must_be_named(self) -> FurnitureRecommendation:
+        """A ``REQUIRED`` priority without a wall would be unsatisfiable by design.
+
+        The combination is meaningless: nothing can be required of a wall that
+        was never named. Rejecting it here keeps the engine from having to
+        interpret a contradictory request.
+        """
+
+        if (
+            self.wall_priority is WallPreference.REQUIRED
+            and self.preferred_wall is None
+        ):
+            raise ValueError(
+                f"'{self.item_id}' has a required wall priority but no "
+                "preferred_wall. Name the wall, or use the default "
+                "'preferred' priority."
             )
         return self
 
@@ -466,6 +512,69 @@ class PlacementOutcome(_BaseModel):
         return self.status is PlacementStatus.FAILED
 
 
+class IntentCheck(_BaseModel):
+    """One requested wall, and whether the finished layout honoured it.
+
+    ``satisfied`` is deliberately three-valued. ``True`` means the placed
+    footprint touches the requested wall, ``False`` means it was placed
+    somewhere else, and ``None`` means it could not be judged at all — the
+    item was not placed, or the project predates intent support. A ``None``
+    must never be rendered as a satisfied preference.
+    """
+
+    item_id: Annotated[str, Field(min_length=1, max_length=60)]
+    label: Annotated[str, Field(min_length=1, max_length=120)]
+    preferred_wall: Wall
+    priority: WallPreference = WallPreference.PREFERRED
+    satisfied: bool | None = None
+    actual_walls: Annotated[list[Wall], Field(max_length=4)] = Field(
+        default_factory=list
+    )
+    note: Annotated[str, Field(max_length=300)] = ""
+
+
+class ConceptCompatibility(_BaseModel):
+    """How much of the stated layout intent the calculated plan actually met.
+
+    This is deliberately *not* part of the layout score. The score measures
+    geometry — fit, clearance, circulation — and a layout can score well while
+    ignoring every spatial wish in the concept it was chosen for. Reporting the
+    two separately stops a high geometric score from reading as design quality.
+
+    Counts, not a blended number: "3 of 4 requested walls met" is a fact a
+    reader can check against the plan, whereas a fraction folded into a score
+    is not.
+    """
+
+    checks: Annotated[list[IntentCheck], Field(default_factory=list)] = Field(
+        default_factory=list
+    )
+    note: Annotated[str, Field(max_length=500)] = ""
+
+    @property
+    def is_evaluated(self) -> bool:
+        return bool(self.checks)
+
+    @property
+    def satisfied_count(self) -> int:
+        return sum(1 for check in self.checks if check.satisfied is True)
+
+    @property
+    def unmet_count(self) -> int:
+        return sum(1 for check in self.checks if check.satisfied is False)
+
+    @property
+    def unknown_count(self) -> int:
+        return sum(1 for check in self.checks if check.satisfied is None)
+
+    @property
+    def is_fully_satisfied(self) -> bool:
+        return self.is_evaluated and self.satisfied_count == len(self.checks)
+
+    @property
+    def unmet(self) -> tuple[IntentCheck, ...]:
+        return tuple(check for check in self.checks if check.satisfied is False)
+
 
 class BudgetAnalysis(_BaseModel):
     """Deterministic budget results. Arithmetic is produced by Python."""
@@ -531,6 +640,11 @@ class ProjectResult(_BaseModel):
     color_direction: Annotated[str, Field(max_length=500)] = ""
     design_rationale: Annotated[str, Field(max_length=2000)] = ""
     placement: PlacementOutcome | None = None
+    #: How much of the concept's requested layout intent the calculated plan met.
+    #: Defaulted to ``None`` so a result assembled before intent support still
+    #: validates, and the report can say "not recorded" rather than inventing a
+    #: satisfied verdict.
+    concept_compatibility: ConceptCompatibility | None = None
 
     @model_validator(mode="after")
     def _selected_concept_belongs_to_collection(self) -> ProjectResult:
@@ -552,6 +666,7 @@ __all__ = [
     "BudgetAnalysis",
     "BudgetInput",
     "ConceptCollection",
+    "ConceptCompatibility",
     "Currency",
     "DesignBrief",
     "DesignConcept",
@@ -562,6 +677,7 @@ __all__ = [
     "FurnitureItem",
     "FurniturePosition",
     "FurnitureRecommendation",
+    "IntentCheck",
     "MaterialRecommendation",
     "OpeningInput",
     "PaletteDirection",
@@ -577,4 +693,5 @@ __all__ = [
     "UnplacedItem",
     "UserRequirements",
     "Wall",
+    "WallPreference",
 ]

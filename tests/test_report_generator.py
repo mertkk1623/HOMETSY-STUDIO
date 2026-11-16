@@ -47,17 +47,21 @@ from core.spatial_engine import DEFAULT_DOOR_CLEARANCE_CM
 from models.schemas import (
     BudgetAnalysis,
     ConceptCollection,
+    ConceptCompatibility,
     DesignBrief,
     DesignConcept,
     DesignEvaluation,
     FurnitureItem,
     FurnitureRecommendation,
+    IntentCheck,
     MaterialRecommendation,
     PlacedFootprint,
     PlacementOutcome,
     PlacementStatus,
     ProjectResult,
     SpatialValidation,
+    Wall,
+    WallPreference,
 )
 from ui import commits, theme
 
@@ -545,6 +549,11 @@ def test_the_report_says_the_plan_is_calculated_not_interpreted(written) -> None
 
     Without this, section D ("bed centred on the long west wall") and section F
     (the bed at 240, 380) sit next to each other with nothing to reconcile them.
+
+    The wording narrowed when structured layout intent was added: a named wall
+    is now passed to the engine, so "it ignores the concept" would be false.
+    What must stay true is that the *text* is not read and the position is not
+    the AI's to decide.
     """
 
     path, _, _ = written
@@ -552,8 +561,8 @@ def test_the_report_says_the_plan_is_calculated_not_interpreted(written) -> None
 
     assert "The plan is calculated, not interpreted" in text
     assert "does not read that text" in text
-    assert "own fixed rules" in text
-    assert "may differ from where the concept's wording suggests" in text
+    assert "structured preference" in text
+    assert "still calculated" in text
 
 
 def test_the_report_explains_what_the_strategy_name_means(written) -> None:
@@ -1381,3 +1390,194 @@ def test_a_project_without_the_optional_fields_still_reports(tmp_path, room,
     text = pdf_text(path)
     assert "Layout not recorded" in text
     assert "No materials were recommended for this concept." in text
+
+
+# --------------------------------------------------------------------------- #
+# Concept compatibility
+# --------------------------------------------------------------------------- #
+
+
+def test_the_report_records_which_requested_walls_were_met(
+    tmp_path, room, preferences, requirements, budget, catalog
+) -> None:
+    """The PDF states intent as a fact checked against the coordinates."""
+
+    result, estimate = make_result(
+        room, preferences, requirements, budget, catalog
+    )
+    result = result.model_copy(
+        update={
+            "concept_compatibility": ConceptCompatibility(
+                checks=[
+                    IntentCheck(
+                        item_id="sofa_three_seat",
+                        label="Three-seat sofa",
+                        preferred_wall=Wall.WEST,
+                        satisfied=True,
+                    ),
+                    IntentCheck(
+                        item_id="coffee_table",
+                        label="Coffee table",
+                        preferred_wall=Wall.NORTH,
+                        satisfied=False,
+                        note="Requested north, placed south instead.",
+                    ),
+                ],
+                note="1 of 2 requested walls were met by the calculated plan.",
+            )
+        }
+    )
+
+    path = write_report(
+        result,
+        catalog=catalog,
+        budget=estimate,
+        path=tmp_path / "compat.pdf",
+        generated_at=GENERATED_AT,
+    )
+    text = pdf_text(path)
+
+    assert "Concept compatibility" in text
+    assert "1 of 2 requested walls were met" in text
+    assert "Three-seat sofa" in text
+    assert "Coffee table" in text
+    # The table names the requested wall and the verdict per row.
+    assert "Requested wall" in text
+    assert "Priority" in text
+    assert "Outcome" in text
+    assert "west" in text
+    assert "north" in text
+
+
+def test_a_missed_wall_is_never_described_as_realised(
+    tmp_path, room, preferences, requirements, budget, catalog
+) -> None:
+    """The table must report the miss, not the concept's wish."""
+
+    result, estimate = make_result(
+        room, preferences, requirements, budget, catalog
+    )
+    result = result.model_copy(
+        update={
+            "concept_compatibility": ConceptCompatibility(
+                checks=[
+                    IntentCheck(
+                        item_id="coffee_table",
+                        label="Coffee table",
+                        preferred_wall=Wall.NORTH,
+                        satisfied=False,
+                        note="Requested north, placed south instead.",
+                    )
+                ],
+                note="0 of 1 requested walls were met by the calculated plan.",
+            )
+        }
+    )
+
+    path = write_report(
+        result,
+        catalog=catalog,
+        budget=estimate,
+        path=tmp_path / "missed.pdf",
+        generated_at=GENERATED_AT,
+    )
+    text = pdf_text(path)
+
+    assert "Not met" in text
+    assert "Requested north, placed south instead." in text
+    # The verdict exists and is not silently dropped from the report.
+    assert "0 of 1 requested walls were met" in text
+
+
+def test_a_report_without_intent_says_compatibility_was_not_assessed(
+    tmp_path, room, preferences, requirements, budget, catalog
+) -> None:
+    """Absent intent is reported as absent, never as satisfied."""
+
+    result, estimate = make_result(
+        room, preferences, requirements, budget, catalog
+    )
+    assert result.concept_compatibility is None
+
+    path = write_report(
+        result,
+        catalog=catalog,
+        budget=estimate,
+        path=tmp_path / "no-intent.pdf",
+        generated_at=GENERATED_AT,
+    )
+    text = pdf_text(path)
+
+    assert "Concept compatibility" in text
+    assert "Not recorded for this project" in text
+    # And it explicitly refuses to read as a match.
+    assert "not a statement that the plan matches the concept" in text
+
+
+def test_an_unevaluated_compatibility_is_not_a_satisfied_one(
+    tmp_path, room, preferences, requirements, budget, catalog
+) -> None:
+    """An empty check list is "nothing to compare", not "all met"."""
+
+    result, estimate = make_result(
+        room, preferences, requirements, budget, catalog
+    )
+    result = result.model_copy(
+        update={
+            "concept_compatibility": ConceptCompatibility(
+                note="No layout intent was recorded for this project, so "
+                "concept compatibility was not assessed."
+            )
+        }
+    )
+
+    path = write_report(
+        result,
+        catalog=catalog,
+        budget=estimate,
+        path=tmp_path / "empty.pdf",
+        generated_at=GENERATED_AT,
+    )
+    text = pdf_text(path)
+
+    assert "No layout intent was recorded, so there is nothing to compare" in text
+    assert "not the same as the plan being consistent with it" in text
+
+
+def test_an_unplaced_item_is_reported_as_not_assessed(
+    tmp_path, room, preferences, requirements, budget, catalog
+) -> None:
+    """A missing piece has no coordinates, so its wall cannot be judged."""
+
+    result, estimate = make_result(
+        room, preferences, requirements, budget, catalog
+    )
+    result = result.model_copy(
+        update={
+            "concept_compatibility": ConceptCompatibility(
+                checks=[
+                    IntentCheck(
+                        item_id="bench",
+                        label="Bench",
+                        preferred_wall=Wall.NORTH,
+                        priority=WallPreference.REQUIRED,
+                        satisfied=None,
+                        note="Not placed, so the preferred wall could not be assessed.",
+                    )
+                ],
+                note="0 of 1 requested walls were met by the calculated plan.",
+            )
+        }
+    )
+
+    path = write_report(
+        result,
+        catalog=catalog,
+        budget=estimate,
+        path=tmp_path / "unplaced.pdf",
+        generated_at=GENERATED_AT,
+    )
+    text = pdf_text(path)
+
+    assert "Not assessed" in text
+    assert "not placed" in text

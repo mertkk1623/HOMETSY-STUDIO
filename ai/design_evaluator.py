@@ -38,6 +38,7 @@ from ai.prompt import (
 from models.schemas import (
     BudgetAnalysis,
     BudgetInput,
+    ConceptCompatibility,
     DesignBrief,
     DesignConcept,
     DesignEvaluation,
@@ -112,14 +113,26 @@ CRITICAL RULES ABOUT CALCULATED DATA
 - If the layout is marked incomplete for any other reason, the requested items
   that were not placed are not in the room: do not call the design fully
   buildable, and name what is missing.
-- The concept's spatial wording is design intent, not a measured fact. The
-  placement engine does not read it: it places items from the catalog
-  dimensions under its own fixed rule set. The placed coordinates are the only
-  evidence of where anything actually is.
+- The concept's spatial wording is design intent, not a measured fact. Where
+  the concept named a wall for a piece, that wall was passed to the placement
+  engine as a structured preference and is reported under concept
+  compatibility; the engine searches the named wall first but still calculates
+  the position along it, the rotation and the feasibility. The placed
+  coordinates are the only evidence of where anything actually is.
 - Never state or repeat that a concept's spatial description was realised —
   a bed "centred on the west wall", nightstands "flanking" it, a "kept clear"
   path — unless the placed coordinates below confirm it. Compare the positions
   with the concept's wording before saying a spatial arrangement exists.
+- The concept compatibility block is authoritative. When it reports a requested
+  wall as not met, say so plainly in functional_suitability and name the wall
+  the piece actually went to. Do not describe a missed wall as met, and do not
+  explain it away as a stylistic choice.
+- When a requested wall was not met because the piece was required on that wall
+  and could not be placed, that item is not in the room: treat it as missing
+  furniture, not as a moved one.
+- Concept compatibility is not a quality score. It counts requested walls, it
+  does not rate the design, and "all requested walls met" does not mean the
+  design is good. Never present it as a design-quality rating.
 - If the placed coordinates contradict the concept's spatial wording, say so
   plainly in functional_suitability. That is a real limitation of the design,
   and passing over it is worse than reporting it.
@@ -135,6 +148,52 @@ CRITICAL RULES ABOUT CALCULATED DATA
   Their cost is unknown and must be described as unknown when it is mentioned.
 - Do not invent measurements, prices or catalog items.
 - Judge only the concept you were given. Do not propose a different concept."""
+
+
+def _compatibility_block(
+    compatibility: ConceptCompatibility | None,
+) -> dict[str, object]:
+    """Whether the plan kept the walls the concept asked for.
+
+    Deterministic and already computed by the placement engine. Passing it
+    stops the evaluator from re-deriving intent from the concept's prose, which
+    is the one thing it cannot measure. The block states the counts and the
+    per-item verdict, and the contract forbids reading them as a design rating.
+    """
+
+    if compatibility is None:
+        return {"recorded": False}
+
+    if not compatibility.is_evaluated:
+        return {
+            "recorded": True,
+            "evaluated": False,
+            "note": compatibility.note,
+        }
+
+    return {
+        "recorded": True,
+        "evaluated": True,
+        "summary": compatibility.note,
+        "satisfied_count": compatibility.satisfied_count,
+        "unmet_count": compatibility.unmet_count,
+        "unknown_count": compatibility.unknown_count,
+        "all_satisfied": compatibility.is_fully_satisfied,
+        "checks": [
+            {
+                "item_id": check.item_id,
+                "name": check.label,
+                "requested_wall": check.preferred_wall.value,
+                "priority": check.priority.value,
+                "satisfied": check.satisfied,
+                "walls_actually_touched": [
+                    wall.value for wall in check.actual_walls
+                ],
+                "note": check.note,
+            }
+            for check in compatibility.checks
+        ],
+    }
 
 
 def _spatial_block(validation: SpatialValidation) -> dict[str, object]:
@@ -264,6 +323,7 @@ def build_prompt(
     *,
     budget_is_complete: bool = True,
     placement: PlacementOutcome | None = None,
+    compatibility: ConceptCompatibility | None = None,
 ) -> PromptSpec:
     """Assemble the prompt around the finished deterministic results."""
 
@@ -287,6 +347,8 @@ def build_prompt(
         f"{json_block(_spatial_block(spatial))}\n"
         "Placement completeness and placed coordinates:\n"
         f"{json_block(_placement_block(placement))}\n"
+        "Concept compatibility (requested walls versus placed coordinates):\n"
+        f"{json_block(_compatibility_block(compatibility))}\n"
         "Budget:\n"
         f"{json_block(_budget_block(analysis, budget_is_complete))}"
     )
@@ -311,6 +373,7 @@ def evaluate_design(
     *,
     budget_is_complete: bool = True,
     placement: PlacementOutcome | None = None,
+    compatibility: ConceptCompatibility | None = None,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     completer: Completer | None = None,
 ) -> DesignEvaluation:
@@ -325,6 +388,10 @@ def evaluate_design(
         The stored layout outcome. Supplied so the evaluator knows whether every
         requested item reached the room; a valid geometry with unplaced items is
         not a complete design.
+    compatibility:
+        Which requested walls the placed coordinates actually met. Supplied as
+        a finished Python result so the evaluator never has to infer intent from
+        the concept's prose.
 
     Raises
     ------
@@ -348,6 +415,7 @@ def evaluate_design(
         catalog,
         budget_is_complete=budget_is_complete,
         placement=placement,
+        compatibility=compatibility,
     )
     return run_structured_request(
         config,

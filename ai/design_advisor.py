@@ -64,7 +64,9 @@ _ROLE = (
     "catalog, you choose the items that will furnish the room and describe the "
     "materials and colours.\n"
     "You are choosing from a list. You are not measuring the room, pricing the "
-    "basket, or deciding where each piece is placed."
+    "basket, or deciding where each piece is placed. You may say which wall a "
+    "piece belongs against when the concept calls for it, and the application "
+    "works out the exact position."
 )
 
 _CONTRACT = """REQUIRED OUTPUT SHAPE (one JSON object, no extra keys)
@@ -74,7 +76,9 @@ _CONTRACT = """REQUIRED OUTPUT SHAPE (one JSON object, no extra keys)
       "item_id": "must match an item_id from the CATALOG list exactly",
       "quantity": 1,
       "rotation_degrees": 0,
-      "rationale": "one or two sentences, at most 500 characters"
+      "rationale": "one or two sentences, at most 500 characters",
+      "preferred_wall": "north, south, east, west, or null",
+      "wall_priority": "preferred or required, default preferred"
     }
   ],
   "materials": [
@@ -97,15 +101,31 @@ FIELD RULES
 - quantity: whole number from 1 to 20.
 - rotation_degrees: one of 0, 90, 180, 270.
 - materials: at most 12. Describe materials, not products from the catalog.
+- preferred_wall: one of north, south, east, west, or null. Use null when the
+  concept does not call for a particular wall.
 - Every field shown above is required unless it has a default in the shape.
+
+PREFERRED WALL RULES
+- At most THREE furniture items may carry a preferred_wall. This is a limit on
+  how specific a concept's layout language may be, not a style preference.
+- Only give a preferred_wall when the SELECTED CONCEPT names or clearly implies
+  that wall for that piece, for example "the bed pushed toward the west wall"
+  or "a desk at the east window".
+- Never give a preferred_wall to an item the concept treats as flexible.
+- wall_priority: use "required" only when the concept insists on the wall and
+  the piece would be pointless elsewhere. Otherwise use "preferred", which
+  lets the application fall back to another wall rather than lose the item.
+- Name the wall, never the position. "west" is allowed; a coordinate, an
+  offset, a distance along the wall, or "the north-west corner" is not.
 
 WHAT YOU MUST NOT DO
 - Do not state prices, costs, totals or currency amounts. Pricing is done by the
   application from the catalog.
 - Do not state widths, depths or any other dimension. Dimensions come from the
   catalog.
-- Do not assign positions, coordinates or wall placements. Placement is checked
-  geometrically by the application.
+- Do not assign coordinates or exact positions. You may name a wall, and that
+  is all: the application decides where along the wall a piece sits, which way
+  it faces, and whether your wall is achievable at all.
 - Do not choose catalog items that do not support this room type."""
 
 

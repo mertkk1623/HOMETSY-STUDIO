@@ -1323,9 +1323,11 @@ def _plan(result: ProjectResult, styles: dict) -> list:
         _note(
             "The plan is calculated, not interpreted. The selected concept in "
             "section D describes a design direction in words; the layout engine "
-            "does not read that text. It places the catalog pieces it is given "
-            "under its own fixed rules, so a position here may differ from where "
-            "the concept's wording suggests a piece would go.",
+            "does not read that text. Where the concept names a wall for a "
+            "piece, that wall is passed to the engine as a structured "
+            "preference and the engine searches it first, but the position "
+            "along the wall, the rotation and the final feasibility are still "
+            "calculated. Section G records which requested walls were met.",
             styles,
         )
     )
@@ -1394,6 +1396,91 @@ def _plan(result: ProjectResult, styles: dict) -> list:
 # -- G: spatial validation -------------------------------------------------- #
 
 
+def _compatibility(result: ProjectResult, styles: dict) -> list:
+    """How much of the requested layout intent the calculated plan met.
+
+    Reported here, beside the geometric verdict and never inside the score. A
+    plan can pass every geometric check and still stand somewhere other than
+    where the concept asked, and that difference is a design fact a reader is
+    entitled to see.
+    """
+
+    compatibility = result.concept_compatibility
+    if compatibility is None:
+        return [
+            Paragraph("Concept compatibility", styles["h2"]),
+            _p(
+                "Not recorded for this project. Earlier projects were produced "
+                "before layout intent was captured, so no requested wall can be "
+                "compared with the plan. This is not a statement that the plan "
+                "matches the concept.",
+                styles["body"],
+            ),
+        ]
+
+    if not compatibility.is_evaluated:
+        return [
+            Paragraph("Concept compatibility", styles["h2"]),
+            _p(
+                "No layout intent was recorded, so there is nothing to compare. "
+                "The selected concept describes a direction in words and named "
+                "no walls, which is not the same as the plan being consistent "
+                "with it.",
+                styles["body"],
+            ),
+        ]
+
+    rows = [
+        [
+            check.label,
+            check.preferred_wall.value,
+            check.priority.value,
+            _intent_verdict(check),
+        ]
+        for check in compatibility.checks
+    ]
+    story: list = [Paragraph("Concept compatibility", styles["h2"])]
+    story.append(
+        _p(
+            compatibility.note
+            + " These are the walls the design concept asked for; the plan is "
+            "measured against them from the placed coordinates.",
+            styles["body"],
+        )
+    )
+    story.append(Spacer(1, 2 * mm))
+    story.append(
+        _data_table(
+            ["Item", "Requested wall", "Priority", "Outcome"],
+            rows,
+            [58 * mm, 32 * mm, 26 * mm, 58 * mm],
+            styles,
+        )
+    )
+    story.append(
+        _note(
+            "Concept compatibility is judged against the placed coordinates and "
+            "is reported separately from the layout score. A valid, high-scoring "
+            "plan can still miss every wall the concept asked for, and that is "
+            "what this table records.",
+            styles,
+        )
+    )
+    return story
+
+
+def _intent_verdict(check) -> str:
+    """One short phrase describing what happened to one requested wall."""
+
+    if check.satisfied is True:
+        return "Met"
+    if check.satisfied is None:
+        return "Not assessed \u2014 not placed"
+    if check.note:
+        return f"Not met \u2014 {check.note}"
+    return "Not met"
+
+
 def _spatial(result: ProjectResult, styles: dict) -> list:
     validation = result.spatial_validation
     outcome = result.placement
@@ -1444,6 +1531,8 @@ def _spatial(result: ProjectResult, styles: dict) -> list:
         )
     story.append(Spacer(1, 2 * mm))
     story.append(_two_column(rows, styles))
+
+    story.extend(_compatibility(result, styles))
 
     story.append(Paragraph("Blocking problems", styles["h2"]))
     if blocking:

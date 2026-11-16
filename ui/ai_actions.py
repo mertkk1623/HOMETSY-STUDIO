@@ -28,6 +28,7 @@ from models.schemas import (
     BudgetAnalysis,
     BudgetInput,
     ConceptCollection,
+    ConceptCompatibility,
     DesignBrief,
     DesignConcept,
     DesignEvaluation,
@@ -228,6 +229,7 @@ def evaluate_design(
     analysis: BudgetAnalysis,
     budget_is_complete: bool = True,
     placement: PlacementOutcome | None = None,
+    compatibility: ConceptCompatibility | None = None,
 ) -> DesignEvaluation:
     """Run AI operation 4 exactly once and return the validated evaluation.
 
@@ -237,7 +239,9 @@ def evaluate_design(
     ``is_trustworthy``, so a partial estimate is described as partial instead of
     being presented as a final total. ``placement`` is the stored layout
     outcome, so an incomplete layout is described as incomplete rather than
-    being read off the geometry verdict alone.
+    being read off the geometry verdict alone. ``compatibility`` is the
+    engine's own verdict on the requested walls, handed over so the evaluator
+    never has to guess intent from prose.
     """
 
     from ai.design_evaluator import evaluate_design as _evaluate_design
@@ -257,6 +261,7 @@ def evaluate_design(
         load_catalog(),
         budget_is_complete=budget_is_complete,
         placement=placement,
+        compatibility=compatibility,
     )
 
 

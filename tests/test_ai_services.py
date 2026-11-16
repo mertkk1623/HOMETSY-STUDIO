@@ -43,11 +43,15 @@ from ai.parsing import (
 from models.schemas import (
     BudgetAnalysis,
     ConceptCollection,
+    ConceptCompatibility,
     DesignBrief,
     DesignEvaluation,
     DesignRecommendation,
+    IntentCheck,
     RoomType,
     SpatialValidation,
+    Wall,
+    WallPreference,
 )
 
 # --------------------------------------------------------------------------- #
@@ -651,7 +655,7 @@ def test_advisor_prompt_lists_only_usable_catalog_items(
     assert "bed_double" not in prompt.context
 
 
-def test_advisor_prompt_forbids_prices_and_dimensions(
+def test_advisor_prompt_forbids_prices_dimensions_and_coordinates(
     room, preferences, budget, brief, concept, catalog
 ) -> None:
     from ai.design_advisor import build_prompt as advisor_prompt
@@ -659,7 +663,25 @@ def test_advisor_prompt_forbids_prices_and_dimensions(
     prompt = advisor_prompt(room, preferences, budget, brief, concept, catalog)
     assert "Do not state prices" in prompt.contract
     assert "Do not state widths" in prompt.contract
-    assert "Do not assign positions" in prompt.contract
+    # The advisor may name a wall, but never a position. The blanket "do not
+    # assign positions" became false when layout intent was introduced, so the
+    # prohibition is now scoped to coordinates and exact positions.
+    assert "Do not assign coordinates or exact positions" in prompt.contract
+
+
+def test_advisor_prompt_allows_at_most_three_preferred_walls(
+    room, preferences, budget, brief, concept, catalog
+) -> None:
+    """Intent is capped, so a concept cannot over-constrain the room."""
+
+    from ai.design_advisor import build_prompt as advisor_prompt
+
+    prompt = advisor_prompt(room, preferences, budget, brief, concept, catalog)
+    assert "At most THREE furniture items may carry a preferred_wall" in prompt.contract
+    assert '"preferred_wall"' in prompt.contract
+    assert '"wall_priority"' in prompt.contract
+    # The wall name is the only spatial vocabulary the advisor owns.
+    assert "Name the wall, never the position" in prompt.contract
 
 
 # --------------------------------------------------------------------------- #
@@ -1214,9 +1236,16 @@ def test_evaluator_must_not_claim_unverified_spatial_consistency(
     assert "do not claim the arrangement matches the concept" in contract
 
 
-def test_evaluator_is_told_the_engine_ignores_the_concept_wording(
+def test_evaluator_is_told_the_engine_does_not_read_prose(
     room, preferences, budget, brief, concept, catalog, spatial, analysis
 ) -> None:
+    """The engine reads structured wall intent, never the concept's words.
+
+    This replaces the older "the engine ignores the concept entirely" claim,
+    which stopped being true when layout intent was introduced: a named wall is
+    now passed through, but the prose still is not.
+    """
+
     from ai.design_evaluator import build_prompt as evaluator_prompt
 
     prompt = evaluator_prompt(
@@ -1224,8 +1253,125 @@ def test_evaluator_is_told_the_engine_ignores_the_concept_wording(
         placement=_placed_layout(),
     )
 
-    assert "placement engine does not read it" in prompt.contract
-    assert "own fixed rule set" in prompt.contract
+    contract = prompt.contract
+    assert "design intent, not a measured fact" in contract
+    assert "structured preference" in contract
+    assert "still calculates" in contract
+    # And the separation from a quality rating must survive the rewording.
+    assert "Concept compatibility is not a quality score" in contract
+
+
+def test_evaluator_receives_the_calculated_compatibility(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """Python owns the verdict; the evaluator only reads it.
+
+    Without this block the model would have to infer intent from the concept's
+    prose — the one thing it cannot measure — and could then praise an
+    arrangement the plan never produced.
+    """
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    compatibility = ConceptCompatibility(
+        checks=[
+            IntentCheck(
+                item_id="sofa_three_seat",
+                label="Three-seat sofa",
+                preferred_wall=Wall.WEST,
+                satisfied=True,
+                actual_walls=[Wall.WEST],
+            ),
+            IntentCheck(
+                item_id="coffee_table",
+                label="Coffee table",
+                preferred_wall=Wall.NORTH,
+                priority=WallPreference.REQUIRED,
+                satisfied=None,
+                note="Not placed, so the preferred wall could not be assessed.",
+            ),
+        ],
+        note="1 of 2 requested walls were met by the calculated plan.",
+    )
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+        compatibility=compatibility,
+    )
+
+    context = prompt.context
+    assert (
+        "Concept compatibility (requested walls versus placed coordinates)"
+        in context
+    )
+    assert "1 of 2 requested walls were met" in context
+    assert '"satisfied_count": 1' in context
+    assert '"unknown_count": 1' in context
+    assert '"all_satisfied": false' in context
+    assert '"requested_wall": "west"' in context
+    assert '"requested_wall": "north"' in context
+    assert '"priority": "required"' in context
+
+
+def test_evaluator_is_told_a_missing_compatibility_is_missing(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """An unrecorded verdict must be sent as absent, not as an empty success."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+    )
+
+    assert '"recorded": false' in prompt.context
+    # And nothing pretends that every requested wall was met.
+    assert '"all_satisfied": true' not in prompt.context
+
+
+def test_evaluator_is_told_an_unevaluated_compatibility_is_not_a_pass(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """No intent means "nothing to compare", which is not a satisfied verdict."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+        compatibility=ConceptCompatibility(
+            note="No layout intent was recorded for this project."
+        ),
+    )
+
+    assert '"recorded": true' in prompt.context
+    assert '"evaluated": false' in prompt.context
+    assert '"all_satisfied": true' not in prompt.context
+
+
+def test_the_evaluator_contract_forbids_calling_a_missed_wall_met(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """The prompt must say what to do with an unmet wall, not just supply it."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+    )
+
+    contract = prompt.contract
+    assert "The concept compatibility block is authoritative" in contract
+    assert "When it reports a requested" in contract
+    assert "Do not describe a missed wall as met" in contract
+    # A required wall that could not host the piece means missing furniture.
+    assert "treat it as missing" in contract
+    assert "still calculates" in contract
+    # And the separation from a quality rating must survive the rewording.
+    assert "Concept compatibility is not a quality score" in contract
 
 
 def test_evaluator_bad_output_is_corrected(

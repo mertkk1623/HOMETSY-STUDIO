@@ -215,10 +215,11 @@ def render() -> None:
                     "previous concept."
                 )
                 + theme.field_note(
-                    "A concept describes a direction in words. The room layout is "
-                    "calculated separately from the furniture's real dimensions, "
-                    "so the plan may arrange pieces differently from how the "
-                    "concept's description reads."
+                    "A concept describes a direction in words. Where it names a "
+                    "wall for a piece, that wall is passed to the layout engine "
+                    "as a preference, but the exact position is still calculated "
+                    "from the furniture's real dimensions, and a wall that cannot "
+                    "work is reported rather than forced."
                 )
             )
     elif has_concepts:

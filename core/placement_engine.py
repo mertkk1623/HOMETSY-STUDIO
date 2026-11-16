@@ -134,9 +134,11 @@ from core.spatial_engine import (
 )
 from core.validation import ValidationFinding, placement_findings
 from models.schemas import (
+    ConceptCompatibility,
     FurnitureItem,
     FurniturePosition,
     FurnitureRecommendation,
+    IntentCheck,
     PlacedFootprint,
     PlacementOutcome,
     PlacementStatus,
@@ -145,6 +147,7 @@ from models.schemas import (
     SpatialValidation,
     UnplacedItem,
     Wall,
+    WallPreference,
 )
 
 # --------------------------------------------------------------------------- #
@@ -597,24 +600,27 @@ def _wall_preference(
     An empty ``wall_order`` means "no strategy is being applied", which is how
     the layout-level score stays strategy-neutral: generation may prefer a wall,
     but the comparison between finished layouts must not.
+
+    A footprint can touch a wall that is absent from ``wall_order`` — that is
+    the normal case when a strategy is restricted to one preferred wall and the
+    piece lands flush against a neighbouring one. Such a wall is simply not in
+    the order, so it ranks last rather than raising.
     """
 
     if not wall_order:
         return 0.0
 
-    touching = {
-        wall
-        for wall, flush in (
-            (Wall.WEST, rect.left_cm <= EPS_CM),
-            (Wall.SOUTH, rect.bottom_cm <= EPS_CM),
-            (Wall.EAST, abs(rect.right_cm - room.width_cm) <= EPS_CM),
-            (Wall.NORTH, abs(rect.top_cm - room.length_cm) <= EPS_CM),
-        )
-        if flush
-    }
+    touching = walls_touched(rect, room)
     if not touching:
         return 0.0
-    best = min(wall_order.index(wall) for wall in touching)
+    best = min(
+        (
+            wall_order.index(wall)
+            for wall in touching
+            if wall in wall_order
+        ),
+        default=len(wall_order),
+    )
     return round(1.0 - best / len(wall_order), 6)
 
 
@@ -739,6 +745,8 @@ class _Request:
     item: FurnitureItem
     quantity: int
     requested_rotation: int
+    preferred_wall: Wall | None = None
+    wall_priority: WallPreference = WallPreference.PREFERRED
 
     @property
     def area_cm2(self) -> float:
@@ -747,6 +755,10 @@ class _Request:
     @property
     def is_wall_anchored(self) -> bool:
         return self.item.category in WALL_ANCHORED_CATEGORIES
+
+    @property
+    def has_wall_intent(self) -> bool:
+        return self.preferred_wall is not None
 
 
 def _resolve(
@@ -795,6 +807,8 @@ def _resolve(
                 item=item,
                 quantity=recommendation.quantity,
                 requested_rotation=rotation,
+                preferred_wall=recommendation.preferred_wall,
+                wall_priority=recommendation.wall_priority,
             )
         )
 
@@ -850,8 +864,20 @@ def _candidate_rects(
     room: RoomInput,
     request: _Request,
     wall_order: tuple[Wall, ...],
+    *,
+    walls_only: Wall | None = None,
 ):
-    """Every position the engine is willing to test, in a fixed order."""
+    """Every position the engine is willing to test, in a fixed order.
+
+    ``walls_only`` restricts the search to positions flush against one named
+    wall and **skips the interior grid sweep entirely**. This is what makes a
+    preferred-wall intent real: reordering ``wall_order`` alone does not
+    restrict anything, because the grid sweep that follows always offers every
+    free spot in the room, and a free-standing position can outscore a wall one.
+
+    The restriction is a candidate-set change, not a scoring change, so the
+    weights and the layout score keep their existing meaning.
+    """
 
     item = request.item
     for rotation in rotation_candidates(request.requested_rotation):
@@ -862,7 +888,8 @@ def _candidate_rects(
             # A quarter turn may still fit, so only this orientation is skipped.
             continue
 
-        for wall in wall_order:
+        walls = (walls_only,) if walls_only is not None else wall_order
+        for wall in walls:
             span_cm = wall_length_cm(room.width_cm, room.length_cm, wall)
             along_cm = (
                 size_y_cm if wall in (Wall.WEST, Wall.EAST) else size_x_cm
@@ -871,6 +898,12 @@ def _candidate_rects(
                 yield rotation, _wall_rect(
                     room, wall, offset_cm, size_x_cm, size_y_cm
                 )
+
+        if walls_only is not None:
+            # A preferred wall is a wall. Handing the search the whole floor as
+            # well would let a free-standing spot win, which is the bug this
+            # restriction exists to prevent.
+            continue
 
         for bottom_cm in _offsets(room.length_cm - size_y_cm, GRID_STEP_CM):
             for left_cm in _offsets(room.width_cm - size_x_cm, GRID_STEP_CM):
@@ -950,6 +983,23 @@ def _neutral_quality(
     return _weighted(terms, weights)
 
 
+def _unplaced_code(request: _Request) -> str:
+    """The reason code for an item the greedy pass could not place.
+
+    A *required* wall that could not host the piece is its own code, so the
+    interface can distinguish "the concept asked for a wall that does not work"
+    from "the room is too full". A merely preferred wall falls back before it
+    can fail, so an unplaced preferred item is an ordinary space problem.
+    """
+
+    if (
+        request.preferred_wall is not None
+        and request.wall_priority is WallPreference.REQUIRED
+    ):
+        return "required_wall_unavailable"
+    return "no_valid_position"
+
+
 def _unplaced_reason(
     request: _Request,
     room: RoomInput,
@@ -976,6 +1026,38 @@ def _unplaced_reason(
             "orientation."
         )
 
+    if request.preferred_wall is not None:
+        wall_name = request.preferred_wall.value
+        if request.wall_priority is WallPreference.REQUIRED:
+            if placed_count == 0:
+                return (
+                    f"No clear position was found for '{item.name}' "
+                    f"({dimensions}) on the {wall_name} wall: every point along "
+                    "it overlaps the door clearance zone or leaves the room, "
+                    f"although {free_area_sqm:.2f} m² of floor is free "
+                    "elsewhere. The wall was required, so the item was not "
+                    "moved to another wall."
+                )
+            return (
+                f"No clear position was found for '{item.name}' ({dimensions}) "
+                f"on the {wall_name} wall: every point along it overlaps the "
+                f"door clearance zone or the {placed_count} item(s) already "
+                f"placed, although {free_area_sqm:.2f} m² of floor is free "
+                "elsewhere. The wall was required, so the item was not moved "
+                "to another wall."
+            )
+
+        # PREFERRED: the wall was a wish, and the unrestricted fallback ran.
+        # The piece is out of the room because no wall *and* no free floor could
+        # take it — claiming it "was required" here would be false.
+        return (
+            f"No clear position was found for '{item.name}' ({dimensions}) "
+            f"anywhere in the room. The {wall_name} wall was preferred but "
+            "could not host it, and the unrestricted search that followed "
+            f"found no free floor either, although {free_area_sqm:.2f} m² was "
+            "still unoccupied."
+        )
+
     if placed_count == 0:
         return (
             f"No clear rectangular position was found for '{item.name}' "
@@ -999,12 +1081,87 @@ def _place_request(
     zones: _Zones,
     wall_order: tuple[Wall, ...],
 ) -> FurnitureFootprint | None:
-    """Best free position for one copy, or ``None`` when none exists."""
+    """Best free position for one copy, or ``None`` when none exists.
+
+    When the request carries a preferred wall the search is restricted to that
+    wall first. A ``PREFERRED`` intent falls back to the unrestricted search so
+    the piece is still placed; a ``REQUIRED`` intent does not, and returns
+    ``None`` so the caller can report the miss instead of moving the piece to a
+    wall the concept never asked for.
+    """
+
+    if request.preferred_wall is not None:
+        footprint = _best_rect_on_wall(
+            room,
+            request,
+            placed,
+            zones,
+            request.preferred_wall,
+            _intent_wall_order(request.preferred_wall, wall_order),
+        )
+        if footprint is not None:
+            return footprint
+        if request.wall_priority is WallPreference.REQUIRED:
+            return None
+        # PREFERRED: the wall could not host the piece, so fall through to the
+        # unrestricted search rather than losing the item entirely.
+
+    return _best_rect(
+        room,
+        _candidate_rects(room, request, wall_order),
+        request,
+        placed,
+        zones,
+        wall_order,
+    )
+
+
+def _intent_wall_order(
+    preferred: Wall, wall_order: tuple[Wall, ...]
+) -> tuple[Wall, ...]:
+    """The strategy's order with the preferred wall moved to the front.
+
+    The scoring order still has to be a full ordering for ``_wall_preference``
+    to behave meaningfully, so the remaining walls follow the strategy as usual.
+    """
+
+    return (preferred,) + tuple(wall for wall in wall_order if wall is not preferred)
+
+
+def _best_rect_on_wall(
+    room: RoomInput,
+    request: _Request,
+    placed: list[PlacedFurniture],
+    zones: _Zones,
+    wall: Wall,
+    wall_order: tuple[Wall, ...],
+) -> FurnitureFootprint | None:
+    """The best position for one copy restricted to a single wall."""
+
+    return _best_rect(
+        room,
+        _candidate_rects(room, request, wall_order, walls_only=wall),
+        request,
+        placed,
+        zones,
+        wall_order,
+    )
+
+
+def _best_rect(
+    room: RoomInput,
+    candidates,
+    request: _Request,
+    placed: list[PlacedFurniture],
+    zones: _Zones,
+    wall_order: tuple[Wall, ...],
+) -> FurnitureFootprint | None:
+    """Score the candidate rectangles and return the footprint of the best."""
 
     rects = [placement.footprint.rect for placement in placed]
     best: tuple[float, int, Rect] | None = None
 
-    for rotation, rect in _candidate_rects(room, request, wall_order):
+    for rotation, rect in candidates:
         if not rect_inside_room(rect, room):
             continue
         if zones.door is not None and rects_overlap(rect, zones.door):
@@ -1127,10 +1284,27 @@ def _build_layout(
     strategy: PlacementStrategy,
     zones: _Zones,
 ) -> LayoutCandidate:
-    """Greedy placement pass for one strategy."""
+    """Greedy placement pass for one strategy.
+
+    Items that carry a wall intent are placed before the rest, still largest
+    first within each group. Intent is a constraint on a specific piece, so the
+    piece has to claim its wall while the wall is still free — otherwise a rug
+    or a wardrobe placed earlier can occupy the very spot the concept asked for.
+    Without that ordering the restriction is technically applied but
+    meaningless: the bed ends up in the corner of its preferred wall, flush
+    against two walls at once, rather than along it.
+
+    Items with no intent keep the original area ordering exactly, so a basket
+    with no preferences produces the layout it always did.
+    """
 
     ordered = sorted(
-        requests, key=lambda request: (-request.area_cm2, request.item.item_id)
+        requests,
+        key=lambda request: (
+            0 if request.has_wall_intent else 1,
+            -request.area_cm2,
+            request.item.item_id,
+        ),
     )
     placed: list[PlacedFurniture] = []
     unplaced: list[UnplacedFurniture] = list(unresolved)
@@ -1164,7 +1338,7 @@ def _build_layout(
                     item_id=request.item.item_id,
                     label=request.item.name,
                     count=missed,
-                    reason_code="no_valid_position",
+                    reason_code=_unplaced_code(request),
                     reason=_unplaced_reason(
                         request, room, len(placed), free_area_sqm
                     ),
@@ -1393,6 +1567,208 @@ def apply_placements(
     return tuple(updated)
 
 
+def walls_touched(
+    rect: Rect, room: RoomInput
+) -> tuple[Wall, ...]:
+    """Every wall a footprint lies flush against, in the declared wall order.
+
+    This is the single definition of "touching a wall" used both while scoring
+    candidates and when judging the finished layout. Two definitions would drift
+    and the report would then disagree with the engine that produced the plan.
+
+    A corner footprint touches two walls at once; both are returned. A caller
+    that wants to decide which wall a piece reads as "belonging to" must compare
+    the contact lengths, which is why :func:`contact_length_cm` exists.
+    """
+
+    return tuple(
+        wall
+        for wall, flush in (
+            (Wall.WEST, rect.left_cm <= EPS_CM),
+            (Wall.SOUTH, rect.bottom_cm <= EPS_CM),
+            (Wall.EAST, abs(rect.right_cm - room.width_cm) <= EPS_CM),
+            (Wall.NORTH, abs(rect.top_cm - room.length_cm) <= EPS_CM),
+        )
+        if flush
+    )
+
+
+def contact_length_cm(rect: Rect, room: RoomInput, wall: Wall) -> float:
+    """How much of a footprint's side lies along one wall, in centimeters.
+
+    Zero when the footprint is not flush against that wall. This is what
+    separates "pushed against the west wall" from "parked in the corner, which
+    happens to include the west wall": in a corner the piece touches two walls,
+    and only the longer contact is the arrangement a reader would name.
+    """
+
+    if wall not in walls_touched(rect, room):
+        return 0.0
+    if wall in (Wall.WEST, Wall.EAST):
+        return rect.depth_cm
+    return rect.width_cm
+
+
+def _display_label(item_id: str) -> str:
+    """A readable stand-in for a catalogue item the caller did not supply.
+
+    Only used for an unplaced row when no catalogue was passed or the identifier
+    is unknown to it. It is deliberately mechanical: inventing a prettier name
+    for an item that has no catalogue entry would put a display name in the
+    report that no data source supports.
+    """
+
+    return item_id.replace("_", " ").capitalize()
+
+
+def _dominant_wall(
+    rect: Rect, room: RoomInput, requested: Wall | None = None
+) -> Wall | None:
+    """The wall a footprint most convincingly belongs to, or ``None``.
+
+    ``requested`` resolves the one case geometry cannot: a piece pushed into a
+    corner has two equally long contacts, and nothing in the rectangle says
+    which wall the design meant. When the requested wall is one of the longest
+    contacts it wins the tie, because that is the reading the concept asked for.
+    Every other tie keeps the fixed order ``walls_touched`` yields, so the
+    answer stays deterministic for callers that pass no request.
+    """
+
+    touching = walls_touched(rect, room)
+    if not touching:
+        return None
+    contact_cm = {wall: contact_length_cm(rect, room, wall) for wall in touching}
+    longest_cm = max(contact_cm.values())
+    if requested in touching and contact_cm[requested] == longest_cm:
+        return requested
+    return max(touching, key=lambda wall: contact_cm[wall])
+
+
+def check_intent(
+    room: RoomInput,
+    recommendations: Sequence[FurnitureRecommendation],
+    placements: Sequence[PlacedFootprint] | None = None,
+    *,
+    catalog: Sequence[FurnitureItem] | None = None,
+) -> ConceptCompatibility:
+    """Judge the requested walls against the coordinates actually produced.
+
+    Deterministic, and deliberately separate from the layout score: the score
+    measures geometry, this measures whether the geometry kept the design's
+    promise. An item is satisfied when the placed footprint lies along the
+    requested wall as its dominant contact, so a corner that merely grazes the
+    wall does not count as having been pushed against it. Where two walls are
+    equally long contacts the requested wall wins, because the rectangle alone
+    cannot say which of the two the design meant.
+
+    An item that was requested with a wall but not placed is reported as
+    ``satisfied=None`` with a note, never as satisfied.
+
+    ``catalog`` supplies the display name for an item that was not placed: the
+    placed branch reads it from the footprint, and a row that reports a failure
+    must not be the one place a reader sees a raw ``bedside_table``. Without it
+    the identifier is humanised, which is close but not authoritative.
+    """
+
+    wanted = [item for item in recommendations if item.preferred_wall is not None]
+    if not wanted:
+        return ConceptCompatibility(
+            checks=[],
+            note=(
+                "No layout intent was recorded for this project, so concept "
+                "compatibility was not assessed."
+            ),
+        )
+
+    by_id: dict[str, list[PlacedFootprint]] = {}
+    for footprint in placements or ():
+        by_id.setdefault(footprint.item_id, []).append(footprint)
+
+    # A placed row takes its label from the footprint, which the engine already
+    # filled from the catalog. An unplaced row has no footprint, so the catalog
+    # is the only authoritative source; the humanised identifier is a fallback
+    # for callers that did not pass one.
+    catalog_names = {
+        entry.item_id: entry.name for entry in catalog or ()
+    }
+
+    checks: list[IntentCheck] = []
+    for item in wanted:
+        assert item.preferred_wall is not None  # filtered above
+        placed = by_id.get(item.item_id, [])
+        if not placed:
+            checks.append(
+                IntentCheck(
+                    item_id=item.item_id,
+                    label=catalog_names.get(
+                        item.item_id, _display_label(item.item_id)
+                    ),
+                    preferred_wall=item.preferred_wall,
+                    priority=item.wall_priority,
+                    satisfied=None,
+                    note=(
+                        "Not placed, so the preferred wall could not be "
+                        "assessed."
+                    ),
+                )
+            )
+            continue
+
+        rects = [
+            Rect(
+                footprint.left_cm,
+                footprint.bottom_cm,
+                footprint.width_cm,
+                footprint.depth_cm,
+            )
+            for footprint in placed
+        ]
+        satisfied = all(
+            _dominant_wall(rect, room, item.preferred_wall)
+            is item.preferred_wall
+            for rect in rects
+        )
+        # ``walls_touched`` already yields in a fixed order, so de-duplicating in
+        # place keeps the stored list deterministic without a second ordering.
+        actual = list(
+            dict.fromkeys(
+                wall
+                for rect in rects
+                for wall in walls_touched(rect, room)
+            )
+        )
+        note = ""
+        if not satisfied:
+            # No requested wall is passed here: the verdict already established
+            # that it is not the longest contact, so naming the strict winner is
+            # the honest description of where the piece actually went.
+            dominant = _dominant_wall(rects[0], room)
+            where = dominant.value if dominant is not None else "free-standing"
+            note = (
+                f"Requested {item.preferred_wall.value}, placed "
+                f"{where} instead."
+            )
+        checks.append(
+            IntentCheck(
+                item_id=item.item_id,
+                label=placed[0].label,
+                preferred_wall=item.preferred_wall,
+                priority=item.wall_priority,
+                satisfied=satisfied,
+                actual_walls=list(actual),
+                note=note,
+            )
+        )
+
+    return ConceptCompatibility(
+        checks=checks,
+        note=(
+            f"{sum(1 for c in checks if c.satisfied is True)} of {len(checks)} "
+            "requested walls were met by the calculated plan."
+        ),
+    )
+
+
 __all__ = [
     "ANCHOR_STEP_CM",
     "CIRCULATION_COMFORT_RATIO",
@@ -1414,8 +1790,12 @@ __all__ = [
     "WALL_ANCHORED_CATEGORIES",
     "WALL_ANCHORED_WEIGHTS",
     "WALL_ANCHOR_RANGE_CM",
+    "WallPreference",
     "apply_placements",
+    "check_intent",
+    "contact_length_cm",
     "generate_layouts",
     "place_furniture",
     "rotation_candidates",
+    "walls_touched",
 ]

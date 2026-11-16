@@ -579,7 +579,10 @@ def _place_and_store(state) -> None:
         state.room, state.furniture, references.load_catalog()
     )
     state.record_spatial(
-        analysis.validation, analysis.outcome, analysis.placements
+        analysis.validation,
+        analysis.outcome,
+        analysis.placements,
+        analysis.compatibility,
     )
     # ``record_spatial`` invalidates the previous price, so the estimate is
     # written after it, from the basket as it now stands.

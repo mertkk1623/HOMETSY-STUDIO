@@ -309,6 +309,7 @@ def _run_evaluation(state, estimate) -> None:
                     analysis=state.budget_analysis,
                     budget_is_complete=estimate.is_trustworthy,
                     placement=state.placement,
+                    compatibility=state.concept_compatibility,
                 ),
                 state.record_evaluation,
             )

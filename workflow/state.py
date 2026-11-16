@@ -37,6 +37,7 @@ from models.schemas import (
     BudgetAnalysis,
     BudgetInput,
     ConceptCollection,
+    ConceptCompatibility,
     DesignBrief,
     DesignConcept,
     DesignEvaluation,
@@ -172,17 +173,27 @@ class StepFailed(WorkflowError):
 
 def _basket_requests(
     recommendations: Sequence[FurnitureRecommendation],
-) -> tuple[tuple[str, int, str], ...]:
+) -> tuple[tuple[str, int, str, str | None, str], ...]:
     """The part of a basket the user actually asked for.
 
     Coordinates and rotation are excluded because ``apply_placements`` writes
     both onto the stored copy: the engine's chosen orientation replaces the
     advisor's hint. They annotate a placement, they do not define a request, so
     comparing them would make an unchanged basket look new.
+
+    ``preferred_wall`` and ``wall_priority`` *are* part of the request: they
+    change where the engine searches, so a new wall on the same item is a new
+    basket and must invalidate the layout that was justified by the old one.
     """
 
     return tuple(
-        (item.item_id, item.quantity, item.rationale)
+        (
+            item.item_id,
+            item.quantity,
+            item.rationale,
+            item.preferred_wall.value if item.preferred_wall is not None else None,
+            item.wall_priority.value,
+        )
         for item in recommendations
     )
 
@@ -277,6 +288,10 @@ class WorkflowState:
     #: the same ``DataKey.SPATIAL`` because a layout and its verdict are one fact:
     #: keeping them as two keys would let a validated plan outlive its geometry.
     placement: PlacementOutcome | None = None
+    #: How much of the requested layout intent the calculated plan met. Stored
+    #: under ``SPATIAL`` for the same reason as ``placement``: it judges those
+    #: exact coordinates and would be stale the moment they changed.
+    concept_compatibility: ConceptCompatibility | None = None
     budget_analysis: BudgetAnalysis | None = None
     evaluation: DesignEvaluation | None = None
 
@@ -429,6 +444,9 @@ class WorkflowState:
         elif key is DataKey.SPATIAL:
             self.spatial = None
             self.placement = None
+            # The compatibility verdict judged those exact coordinates, so it
+            # expires with them.
+            self.concept_compatibility = None
             # The coordinates were the layout's. Keeping them on the basket
             # would leave a stored position that no current validation covers,
             # so they are stripped with the verdict they belong to. Items,
@@ -657,6 +675,7 @@ class WorkflowState:
         spatial: SpatialValidation,
         placement: PlacementOutcome | None = None,
         placements: Sequence[FurnitureRecommendation] | None = None,
+        compatibility: ConceptCompatibility | None = None,
     ) -> tuple[DataKey, ...]:
         """Store the deterministic geometry result and the layout it describes.
 
@@ -675,11 +694,18 @@ class WorkflowState:
         written under ``SPATIAL``, not ``FURNITURE``, because the items,
         quantities and prices are unchanged — only the placement annotation is
         added — and invalidating the price for a coordinate would be wrong.
+
+        ``compatibility`` judges those coordinates against the requested walls,
+        so it belongs to the same fact and is stored under the same key.
         """
 
         self.guard(WorkflowStep.SPATIAL_VALIDATION)
         incoming = None if placements is None else tuple(placements)
-        unchanged = self.spatial == spatial and self.placement == placement
+        unchanged = (
+            self.spatial == spatial
+            and self.placement == placement
+            and self.concept_compatibility == compatibility
+        )
         if incoming is not None and incoming != self.furniture:
             unchanged = False
         if unchanged:
@@ -688,6 +714,7 @@ class WorkflowState:
         def assign() -> None:
             self.spatial = spatial
             self.placement = placement
+            self.concept_compatibility = compatibility
             if incoming is not None:
                 self.furniture = incoming
 
@@ -861,6 +888,7 @@ class WorkflowState:
             color_direction=self.color_direction,
             design_rationale=self.design_rationale,
             placement=self.placement,
+            concept_compatibility=self.concept_compatibility,
         )
 
 

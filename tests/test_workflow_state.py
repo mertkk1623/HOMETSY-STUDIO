@@ -20,13 +20,16 @@ from models.schemas import (
     BudgetAnalysis,
     BudgetInput,
     ConceptCollection,
+    ConceptCompatibility,
     DesignBrief,
     DesignConcept,
     DesignEvaluation,
     DesignPreferences,
     DesignRecommendation,
     DesignStyle,
+    FurniturePosition,
     FurnitureRecommendation,
+    IntentCheck,
     MaterialRecommendation,
     OpeningInput,
     PaletteDirection,
@@ -35,6 +38,7 @@ from models.schemas import (
     SpatialValidation,
     UserRequirements,
     Wall,
+    WallPreference,
 )
 from workflow.dependencies import DataKey
 from workflow.state import (
@@ -46,6 +50,7 @@ from workflow.state import (
     WorkflowState,
     WorkflowStep,
     room_change_keys,
+    unplace_recommendation,
 )
 
 
@@ -111,6 +116,38 @@ def make_recommendation(
 
 def make_spatial(valid: bool = True) -> SpatialValidation:
     return SpatialValidation(is_valid=valid)
+
+
+def recommend_item(
+    item_id: str = "bed_double", **intent: object
+) -> DesignRecommendation:
+    """A one-item advisor result, carrying whatever layout intent is given.
+
+    ``DesignRecommendation`` also demands the narrative fields, so this keeps the
+    intent tests about intent rather than about the model's required prose.
+    """
+
+    return DesignRecommendation(
+        furniture=[FurnitureRecommendation(item_id=item_id, **intent)],
+        color_direction="Warm off-whites with pale oak.",
+        design_rationale="A restrained palette keeps the room calm.",
+    )
+
+
+def complete_with(recommendation: DesignRecommendation) -> WorkflowState:
+    """A finished workflow whose basket is exactly this recommendation.
+
+    Recording a basket invalidates the layout it no longer justifies, so the
+    derived results have to be recorded again — that is the behaviour under
+    test, and getting to a settled state has to respect it.
+    """
+
+    state = complete()
+    state.record_recommendation(recommendation)
+    state.record_spatial(make_spatial())
+    state.record_budget_analysis(make_analysis())
+    state.record_evaluation(make_evaluation())
+    return state
 
 
 def make_analysis(total: str = "18500.00") -> BudgetAnalysis:
@@ -745,6 +782,147 @@ def test_identical_recommendation_invalidates_nothing() -> None:
     state = complete()
     assert state.record_recommendation(make_recommendation()) == ()
     assert state.evaluation is not None
+
+
+def test_a_new_preferred_wall_invalidates_the_layout() -> None:
+    """The wall changes where the engine searches, so the plan is stale.
+
+    The item, its quantity and its rationale are all identical; only the
+    requested wall differs. If intent were left out of the basket identity the
+    stored layout would silently outlive the request that produced it.
+    """
+
+    state = complete_with(recommend_item())
+    assert state.spatial is not None
+
+    dropped = state.record_recommendation(
+        recommend_item(preferred_wall=Wall.WEST)
+    )
+
+    assert DataKey.SPATIAL in dropped
+    assert state.spatial is None
+    assert state.placement is None
+    assert state.concept_compatibility is None
+    assert state.furniture[0].preferred_wall is Wall.WEST
+
+
+def test_a_new_wall_priority_invalidates_the_layout() -> None:
+    """``preferred`` to ``required`` is a different constraint, not a cosmetic one."""
+
+    state = complete_with(recommend_item(preferred_wall=Wall.WEST))
+    assert state.spatial is not None
+
+    dropped = state.record_recommendation(
+        recommend_item(
+            preferred_wall=Wall.WEST, wall_priority=WallPreference.REQUIRED
+        )
+    )
+
+    assert DataKey.SPATIAL in dropped
+    assert state.spatial is None
+
+
+def test_the_same_intent_invalidates_nothing() -> None:
+    """Re-submitting an identical intent must not throw the layout away."""
+
+    state = complete_with(recommend_item(preferred_wall=Wall.WEST))
+    before = state.spatial
+
+    assert state.record_recommendation(recommend_item(preferred_wall=Wall.WEST)) == ()
+    assert state.spatial is before
+
+
+def test_unplacing_a_recommendation_keeps_its_intent() -> None:
+    """Only the engine's coordinates are stripped, never the request.
+
+    ``positions`` belong to one placement run; ``preferred_wall`` belongs to the
+    basket. Conflating them would erase the design intent the moment a layout
+    went stale.
+    """
+
+    placed = FurnitureRecommendation(
+        item_id="bed_double",
+        preferred_wall=Wall.WEST,
+        wall_priority=WallPreference.REQUIRED,
+        position_x_cm=0.0,
+        position_y_cm=120.0,
+        positions=[FurniturePosition(position_x_cm=0.0, position_y_cm=120.0)],
+    )
+
+    cleared = unplace_recommendation(placed)
+
+    assert cleared.position_x_cm is None
+    assert cleared.position_y_cm is None
+    assert cleared.positions == []
+    assert cleared.preferred_wall is Wall.WEST
+    assert cleared.wall_priority is WallPreference.REQUIRED
+    assert cleared.item_id == placed.item_id
+
+
+def test_invalidating_the_layout_clears_the_compatibility_verdict() -> None:
+    """The verdict judged those coordinates, so it expires with them."""
+
+    state = complete_with(recommend_item(preferred_wall=Wall.WEST))
+    compatibility = ConceptCompatibility(
+        checks=[
+            IntentCheck(
+                item_id="bed_double",
+                label="Double bed",
+                preferred_wall=Wall.WEST,
+                satisfied=True,
+            )
+        ]
+    )
+    state.record_spatial(
+        make_spatial(),
+        placement=None,
+        placements=state.furniture,
+        compatibility=compatibility,
+    )
+    assert state.concept_compatibility is compatibility
+
+    # A different basket no longer justifies that layout.
+    state.record_recommendation(recommend_item(item_id="wardrobe"))
+
+    assert state.spatial is None
+    assert state.placement is None
+    assert state.concept_compatibility is None
+
+
+def test_storing_spatial_keeps_the_compatibility_verdict() -> None:
+    """Compatibility judges the stored coordinates, so it lives with them."""
+
+    state = complete_with(recommend_item(preferred_wall=Wall.EAST))
+    compatibility = ConceptCompatibility(
+        checks=[
+            IntentCheck(
+                item_id="bed_double",
+                label="Double bed",
+                preferred_wall=Wall.EAST,
+                satisfied=False,
+                note="Requested east, placed west instead.",
+            )
+        ]
+    )
+
+    dropped = state.record_spatial(make_spatial(), compatibility=compatibility)
+
+    assert DataKey.EVALUATION in dropped
+    assert state.concept_compatibility == compatibility
+
+    state.record_budget_analysis(make_analysis())
+    state.record_evaluation(make_evaluation())
+    assert state.finalize().concept_compatibility == compatibility
+
+
+def test_a_changed_wall_reaches_the_final_result() -> None:
+    """The finalised snapshot reports the intent that is actually stored."""
+
+    state = complete_with(recommend_item(preferred_wall=Wall.EAST))
+
+    result = state.finalize()
+
+    assert result.recommendations[0].preferred_wall is Wall.EAST
 
 
 def test_setting_materials_without_furniture_is_refused() -> None:

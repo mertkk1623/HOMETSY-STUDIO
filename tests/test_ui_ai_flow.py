@@ -793,14 +793,15 @@ def test_a_concept_can_be_selected_then_the_stage_completes(fake_ai: FakeAI) -> 
     # The selection is confirmed on the screen and the next stage is now
     # reachable, rather than being described as unbuilt.
     assert "Concept selected" in rendered
-    # And the screen does not let the concept's prose pass for a layout spec:
-    # the plan is computed separately from the furniture's dimensions. The note
-    # is HTML-escaped by the theme helper, so the apostrophes arrive as entities.
+    # And the screen does not let the concept's prose pass for a layout spec: a
+    # named wall is passed through, but the position is still computed from the
+    # furniture's dimensions. The note is HTML-escaped by the theme helper, so
+    # the apostrophes arrive as entities.
     assert "A concept describes a direction in words" in rendered
+    assert "passed to the layout engine as a preference" in rendered
     assert (
-        "calculated separately from the furniture&#x27;s real dimensions" in rendered
+        "calculated from the furniture&#x27;s real dimensions" in rendered
     )
-    assert "may arrange pieces differently" in rendered
     labels = {button.label for button in at.button}
     assert "Continue to the design plan" in labels
     assert sum(b.label == "Select this concept" for b in at.button) == 2

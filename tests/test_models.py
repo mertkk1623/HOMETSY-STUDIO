@@ -16,12 +16,14 @@ from models.schemas import (
     BudgetAnalysis,
     BudgetInput,
     ConceptCollection,
+    ConceptCompatibility,
     DesignEvaluation,
     DesignPreferences,
     DesignConcept,
     DesignStyle,
     FurnitureItem,
     FurnitureRecommendation,
+    IntentCheck,
     OpeningInput,
     PaletteDirection,
     ProjectResult,
@@ -30,6 +32,7 @@ from models.schemas import (
     SpatialValidation,
     UserRequirements,
     Wall,
+    WallPreference,
 )
 
 # --------------------------------------------------------------------------- #
@@ -285,6 +288,145 @@ def test_recommendation_placement_is_optional() -> None:
 def test_recommendation_rejects_unapproved_rotation() -> None:
     with pytest.raises(ValidationError):
         FurnitureRecommendation(item_id="sofa_3_seat", rotation_degrees=45)
+
+
+# --------------------------------------------------------------------------- #
+# Layout intent
+# --------------------------------------------------------------------------- #
+
+
+def test_layout_intent_is_absent_by_default() -> None:
+    """An item with no preference is exactly the pre-intent request."""
+
+    recommendation = FurnitureRecommendation(item_id="sofa_3_seat")
+    assert recommendation.preferred_wall is None
+    assert recommendation.wall_priority is WallPreference.PREFERRED
+
+
+def test_layout_intent_accepts_a_named_wall() -> None:
+    recommendation = FurnitureRecommendation(
+        item_id="bed_double", preferred_wall=Wall.WEST
+    )
+    assert recommendation.preferred_wall is Wall.WEST
+    # Naming a wall does not make it binding.
+    assert recommendation.wall_priority is WallPreference.PREFERRED
+
+
+def test_layout_intent_accepts_required_priority() -> None:
+    recommendation = FurnitureRecommendation(
+        item_id="bed_double",
+        preferred_wall=Wall.WEST,
+        wall_priority=WallPreference.REQUIRED,
+    )
+    assert recommendation.wall_priority is WallPreference.REQUIRED
+
+
+def test_layout_intent_rejects_a_required_priority_without_a_wall() -> None:
+    """Nothing can be required of a wall that was never named."""
+
+    with pytest.raises(ValidationError, match="no preferred_wall"):
+        FurnitureRecommendation(
+            item_id="bed_double", wall_priority=WallPreference.REQUIRED
+        )
+
+
+def test_layout_intent_rejects_an_unknown_wall() -> None:
+    with pytest.raises(ValidationError):
+        FurnitureRecommendation(
+            item_id="bed_double", preferred_wall="north-east"
+        )
+
+
+def test_layout_intent_rejects_an_unknown_priority() -> None:
+    with pytest.raises(ValidationError):
+        FurnitureRecommendation(
+            item_id="bed_double",
+            preferred_wall=Wall.WEST,
+            wall_priority="mandatory",
+        )
+
+
+def test_old_recommendation_data_without_intent_still_parses() -> None:
+    """Projects stored before intent support must load unchanged.
+
+    The JSON below is the shape written by the previous release: no
+    ``preferred_wall`` and no ``wall_priority`` key at all.
+    """
+
+    legacy = {
+        "item_id": "bed_double",
+        "quantity": 1,
+        "rotation_degrees": 0,
+        "position_x_cm": 0.0,
+        "position_y_cm": 130.0,
+        "positions": [],
+        "rationale": "Centred on the west wall.",
+    }
+
+    recommendation = FurnitureRecommendation.model_validate(legacy)
+
+    assert recommendation.preferred_wall is None
+    assert recommendation.wall_priority is WallPreference.PREFERRED
+    assert recommendation.position_x_cm == 0.0
+
+
+def test_concept_compatibility_counts_only_known_verdicts() -> None:
+    """A verdict is three-valued, and ``None`` is never counted as satisfied."""
+
+    compatibility = ConceptCompatibility(
+        checks=[
+            IntentCheck(
+                item_id="bed_double",
+                label="Double bed",
+                preferred_wall=Wall.WEST,
+                satisfied=True,
+            ),
+            IntentCheck(
+                item_id="desk",
+                label="Desk",
+                preferred_wall=Wall.EAST,
+                satisfied=False,
+                note="Requested east, placed north instead.",
+            ),
+            IntentCheck(
+                item_id="wardrobe",
+                label="Wardrobe",
+                preferred_wall=Wall.NORTH,
+                priority=WallPreference.REQUIRED,
+                satisfied=None,
+            ),
+        ]
+    )
+
+    assert compatibility.is_evaluated is True
+    assert compatibility.satisfied_count == 1
+    assert compatibility.unmet_count == 1
+    assert compatibility.unknown_count == 1
+    assert compatibility.is_fully_satisfied is False
+    assert [check.item_id for check in compatibility.unmet] == ["desk"]
+
+
+def test_concept_compatibility_without_checks_is_not_evaluated() -> None:
+    compatibility = ConceptCompatibility(
+        note="No layout intent was recorded for this project."
+    )
+    assert compatibility.is_evaluated is False
+    assert compatibility.satisfied_count == 0
+    # "Nothing was asked for" must not read as "everything was met".
+    assert compatibility.is_fully_satisfied is False
+
+
+def test_project_result_treats_compatibility_as_optional(
+    project_result: ProjectResult,
+) -> None:
+    """A result assembled before intent support still validates."""
+
+    assert project_result.concept_compatibility is None
+
+    data = project_result.model_dump()
+    assert "concept_compatibility" in data
+    restored = ProjectResult(**data)
+    assert restored.concept_compatibility is None
 
 
 # --------------------------------------------------------------------------- #

@@ -29,9 +29,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from core.placement_engine import apply_placements, place_furniture
+from core.placement_engine import (
+    apply_placements,
+    check_intent,
+    place_furniture,
+)
 from core.spatial_engine import DEFAULT_DOOR_CLEARANCE_CM, DEFAULT_WINDOW_CLEARANCE_CM
 from models.schemas import (
+    ConceptCompatibility,
     FurnitureItem,
     FurnitureRecommendation,
     PlacementOutcome,
@@ -46,11 +51,17 @@ class LayoutAnalysis:
 
     ``placements`` is the tuple to record through ``WorkflowState``; every other
     field is derived from it and from the engine, never recomputed here.
+
+    ``compatibility`` is the engine's judgement of the requested walls against
+    the coordinates it produced. It is kept beside the spatial verdict and the
+    score rather than folded into either: a plan can be geometrically valid and
+    still not be the plan the concept asked for.
     """
 
     placements: tuple[FurnitureRecommendation, ...]
     outcome: PlacementOutcome
     validation: SpatialValidation
+    compatibility: ConceptCompatibility
 
     @property
     def is_complete(self) -> bool:
@@ -93,6 +104,11 @@ def analyse_layout(
     placements = apply_placements(tuple(recommendations), result)
     outcome = result.to_outcome()
     validation = result.validation
+    # The catalog is passed so an unplaced row can carry the same display name a
+    # placed row takes from its footprint, rather than a raw identifier.
+    compatibility = check_intent(
+        room, placements, outcome.placed, catalog=tuple(catalog)
+    )
 
     if validation is None:
         # No candidate survived, so there was nothing for the spatial engine to
@@ -108,6 +124,7 @@ def analyse_layout(
         placements=placements,
         outcome=outcome,
         validation=validation,
+        compatibility=compatibility,
     )
 
 
