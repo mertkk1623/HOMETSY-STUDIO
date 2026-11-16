@@ -1321,6 +1321,16 @@ def _plan(result: ProjectResult, styles: dict) -> list:
     )
     story.append(
         _note(
+            "The plan is calculated, not interpreted. The selected concept in "
+            "section D describes a design direction in words; the layout engine "
+            "does not read that text. It places the catalog pieces it is given "
+            "under its own fixed rules, so a position here may differ from where "
+            "the concept's wording suggests a piece would go.",
+            styles,
+        )
+    )
+    story.append(
+        _note(
             "Legend: filled rectangles are placed furniture; the dark line is the "
             "room boundary; the heavier accent line is the door and the lighter "
             "line is the window. Labels wrap onto a second line where a block is "
@@ -1421,6 +1431,17 @@ def _spatial(result: ProjectResult, styles: dict) -> list:
 
     story: list = _heading("G", "Spatial validation", styles)
     story.append(_p(sentence, styles["body"]))
+    if outcome is not None and outcome.strategy:
+        story.append(
+            _note(
+                "The placement strategy names which wall the engine tried first "
+                "while searching for a layout. The engine builds one candidate "
+                "per wall order and keeps the best-scoring one, so the name "
+                "reports how this layout was found rather than a design decision "
+                "about the room.",
+                styles,
+            )
+        )
     story.append(Spacer(1, 2 * mm))
     story.append(_two_column(rows, styles))
 

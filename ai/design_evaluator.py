@@ -12,6 +12,13 @@ cannot drift from the calculation.
 
 If the budget result is not trustworthy (an item failed to price), the prompt
 says so instead of presenting a partial sum as the total.
+
+The placement block carries the real placed coordinates, not just a count. A
+concept's spatial description ("the bed sits centred on the long west wall") is
+prose that the placement engine never reads, so without the coordinates the
+model can only repeat that prose — and a live report did exactly that while the
+bed stood in the north-east corner. The coordinates are the evidence; the
+contract forbids claiming a spatial arrangement they do not show.
 """
 
 from __future__ import annotations
@@ -58,6 +65,19 @@ MATERIALS_NOT_PRICED_NOTE = (
     "0.00, or as a zero subtotal."
 )
 
+#: How to read the placed coordinates. The model is given no other frame of
+#: reference for them, and guessing one would let it "verify" a concept's
+#: spatial wording against a coordinate system it invented.
+COORDINATE_FRAME_NOTE = (
+    "Positions are the footprint's south-west corner in centimetres, measured "
+    "from the room's south-west corner: x grows towards the east wall and y "
+    "grows towards the north wall. A footprint at x=0 touches the west wall; "
+    "the footprint whose x plus width equals the room width touches the east "
+    "wall; a footprint at y=0 touches the south wall; the footprint whose y "
+    "plus depth equals the room length touches the north wall. placed_size_cm "
+    "is already the size after rotation."
+)
+
 _ROLE = (
     "You are a design reviewer for an interior design application. You receive "
     "one finished concept together with the geometric and budget results that "
@@ -92,6 +112,23 @@ CRITICAL RULES ABOUT CALCULATED DATA
 - If the layout is marked incomplete for any other reason, the requested items
   that were not placed are not in the room: do not call the design fully
   buildable, and name what is missing.
+- The concept's spatial wording is design intent, not a measured fact. The
+  placement engine does not read it: it places items from the catalog
+  dimensions under its own fixed rule set. The placed coordinates are the only
+  evidence of where anything actually is.
+- Never state or repeat that a concept's spatial description was realised —
+  a bed "centred on the west wall", nightstands "flanking" it, a "kept clear"
+  path — unless the placed coordinates below confirm it. Compare the positions
+  with the concept's wording before saying a spatial arrangement exists.
+- If the placed coordinates contradict the concept's spatial wording, say so
+  plainly in functional_suitability. That is a real limitation of the design,
+  and passing over it is worse than reporting it.
+- Geometric validity and concept consistency are separate findings. A layout
+  can be valid (inside the room, no overlaps, clearances free) and still not
+  match the concept it was chosen for. Never present one as evidence of the
+  other.
+- If no placed coordinates were supplied, you cannot judge spatial consistency
+  at all: do not claim the arrangement matches the concept.
 - If the budget result is marked incomplete, do not describe the total as final.
 - Materials are not priced in this application. Never present them as free, as
   costing zero, as a "material subtotal of 0.00", or as included in a total.
@@ -112,12 +149,18 @@ def _spatial_block(validation: SpatialValidation) -> dict[str, object]:
 
 
 def _placement_block(placement: PlacementOutcome | None) -> dict[str, object]:
-    """Whether every requested item reached the room, and what did not.
+    """Whether every requested item reached the room, and where it actually is.
 
     A geometrically valid layout can still be missing furniture: the spatial
     engine only checks what was placed. Without this block the evaluator was
     told the geometry was valid and nothing else, and it wrote that a
     one-of-three layout was "buildable as calculated".
+
+    The placed coordinates are included for the same reason. The concept's
+    spatial description ("the bed sits centred on the long west wall") is free
+    text that the placement engine never consumes, so a live report repeated
+    that sentence while the bed actually stood at (240, 380). Handing the model
+    the real footprints is what lets it check the claim instead of echoing it.
     """
 
     if placement is None:
@@ -128,6 +171,21 @@ def _placement_block(placement: PlacementOutcome | None) -> dict[str, object]:
         "every_requested_item_placed": placement.status is PlacementStatus.COMPLETE,
         "placed_count": placement.placed_count,
         "requested_count": placement.requested_count,
+        "coordinate_frame": COORDINATE_FRAME_NOTE,
+        "placed": [
+            {
+                "item_id": footprint.item_id,
+                "name": footprint.label,
+                "position_x_cm": footprint.left_cm,
+                "position_y_cm": footprint.bottom_cm,
+                "placed_size_cm": {
+                    "width": footprint.width_cm,
+                    "depth": footprint.depth_cm,
+                },
+                "rotation_degrees": footprint.rotation_degrees,
+            }
+            for footprint in placement.placed
+        ],
         "unplaced": [
             {
                 "item_id": item.item_id,
@@ -227,7 +285,7 @@ def build_prompt(
         "CALCULATED RESULTS (authoritative, produced by Python, do not recompute)\n"
         "Spatial validation:\n"
         f"{json_block(_spatial_block(spatial))}\n"
-        "Placement completeness:\n"
+        "Placement completeness and placed coordinates:\n"
         f"{json_block(_placement_block(placement))}\n"
         "Budget:\n"
         f"{json_block(_budget_block(analysis, budget_is_complete))}"

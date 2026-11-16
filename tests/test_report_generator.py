@@ -540,6 +540,34 @@ def test_the_plan_is_drawn_only_for_a_layout_that_was_placed(written) -> None:
     assert "Drawn to scale" in text
 
 
+def test_the_report_says_the_plan_is_calculated_not_interpreted(written) -> None:
+    """The concept is prose; the plan is computed. The report must say so.
+
+    Without this, section D ("bed centred on the long west wall") and section F
+    (the bed at 240, 380) sit next to each other with nothing to reconcile them.
+    """
+
+    path, _, _ = written
+    text = pdf_text(path)
+
+    assert "The plan is calculated, not interpreted" in text
+    assert "does not read that text" in text
+    assert "own fixed rules" in text
+    assert "may differ from where the concept's wording suggests" in text
+
+
+def test_the_report_explains_what_the_strategy_name_means(written) -> None:
+    """`east-first` reads like a design decision; it is a search order."""
+
+    path, _, _ = written
+    text = pdf_text(path)
+
+    assert "Placement strategy" in text
+    assert "which wall the engine tried first" in text
+    assert "best-scoring one" in text
+    assert "rather than a design decision" in text
+
+
 def test_a_failed_layout_draws_no_plan(tmp_path, room, preferences, requirements,
                                        budget, catalog) -> None:
     result, estimate = make_result(

@@ -1086,6 +1086,148 @@ def test_an_unrecorded_layout_is_stated_as_unrecorded(
     assert "every_requested_item_placed" not in prompt.context
 
 
+# --------------------------------------------------------------------------- #
+# The evaluator must see where the furniture actually is
+# --------------------------------------------------------------------------- #
+
+
+def _placed_layout():
+    """A layout that contradicts a "bed centred on the west wall" concept."""
+
+    from models.schemas import PlacementOutcome, PlacementStatus, PlacedFootprint
+
+    return PlacementOutcome(
+        status=PlacementStatus.COMPLETE,
+        strategy="east-first",
+        placed=[
+            PlacedFootprint(
+                item_id="bed_double", label="Double bed", left_cm=240.0,
+                bottom_cm=380.0, width_cm=200.0, depth_cm=160.0,
+                rotation_degrees=90,
+            ),
+            PlacedFootprint(
+                item_id="bedside_table", label="Bedside table", left_cm=100.0,
+                bottom_cm=0.0, width_cm=45.0, depth_cm=40.0,
+            ),
+        ],
+    )
+
+
+def test_placement_block_carries_the_real_coordinates(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """The model cannot check a spatial claim it was never shown the evidence for.
+
+    A live report repeated "the bed centred on the 540 cm west wall" while the
+    bed stood at (240, 380), because the evaluator received counts only.
+    """
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+    )
+    context = prompt.context
+
+    assert '"position_x_cm": 240.0' in context
+    assert '"position_y_cm": 380.0' in context
+    assert '"position_x_cm": 100.0' in context
+    assert '"position_y_cm": 0.0' in context
+    # The rotated extents, not the catalog's unrotated width/depth.
+    assert '"width": 200.0' in context
+    assert '"depth": 160.0' in context
+    assert '"rotation_degrees": 90' in context
+    assert "Double bed" in context
+
+
+def test_placement_block_explains_the_coordinate_frame(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """Coordinates are meaningless without an origin and axis directions."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+    )
+
+    assert "south-west corner" in prompt.context
+    assert "x grows towards the east wall" in prompt.context
+    assert "y grows towards the north wall" in prompt.context
+
+
+def test_placement_block_without_placed_items_reports_none(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """A complete-but-empty placement list must not fabricate coordinates."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+    from models.schemas import PlacementOutcome, PlacementStatus
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=PlacementOutcome(status=PlacementStatus.COMPLETE),
+    )
+
+    assert '"placed": []' in prompt.context
+    assert "position_x_cm" not in prompt.context
+
+
+def test_an_unrecorded_layout_carries_no_coordinates(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """Without a stored layout there is no evidence, so no frame is offered."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog
+    )
+
+    assert '"recorded": false' in prompt.context
+    assert "position_x_cm" not in prompt.context
+    assert "south-west corner" not in prompt.context
+
+
+def test_evaluator_must_not_claim_unverified_spatial_consistency(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    """The contract has to forbid the exact sentence the live run produced."""
+
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+    )
+
+    contract = prompt.contract
+    assert "design intent, not a measured fact" in contract
+    assert "unless the placed coordinates below confirm it" in contract
+    assert "contradict the concept's spatial wording" in contract
+    # Validity must not be presented as proof of concept consistency.
+    assert "Geometric validity and concept consistency are separate findings" in (
+        contract
+    )
+    assert "do not claim the arrangement matches the concept" in contract
+
+
+def test_evaluator_is_told_the_engine_ignores_the_concept_wording(
+    room, preferences, budget, brief, concept, catalog, spatial, analysis
+) -> None:
+    from ai.design_evaluator import build_prompt as evaluator_prompt
+
+    prompt = evaluator_prompt(
+        room, preferences, budget, brief, concept, [], spatial, analysis, catalog,
+        placement=_placed_layout(),
+    )
+
+    assert "placement engine does not read it" in prompt.contract
+    assert "own fixed rule set" in prompt.contract
+
+
 def test_evaluator_bad_output_is_corrected(
     ai_config, fake_completer, room, preferences, budget, brief, concept,
     catalog, spatial, analysis,

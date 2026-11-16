@@ -214,6 +214,12 @@ def render() -> None:
                     "clears the design plan results that were derived from the "
                     "previous concept."
                 )
+                + theme.field_note(
+                    "A concept describes a direction in words. The room layout is "
+                    "calculated separately from the furniture's real dimensions, "
+                    "so the plan may arrange pieces differently from how the "
+                    "concept's description reads."
+                )
             )
     elif has_concepts:
         theme.html_block(
