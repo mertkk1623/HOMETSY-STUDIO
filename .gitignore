@@ -43,6 +43,12 @@ chromium-profile/
 playwright-report/
 test-results/
 
+# Design asset pack: the delivered archive and its extracted copy are working
+# material, not sources. The approved files live in assets/brand, assets/icons,
+# assets/images and docs/design-reference and are tracked individually.
+HOMETSY_UI_V2_ASSETS.zip
+HOMETSY_UI_V2_ASSETS/
+
 # Operating system and editor noise
 .DS_Store
 Thumbs.db

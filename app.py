@@ -53,6 +53,10 @@ def _render_workflow() -> None:
     renderer = _SCREENS.get(screen, pages_room.render)
     renderer()
 
+    # These two actions live in the sidebar, which collapses on a narrow screen.
+    # Streamlit's own expand control stays in the header and is labelled "Expand
+    # sidebar" (verified in a real 390 px viewport), so the actions remain
+    # reachable — not merely present off-canvas.
     if st.sidebar.button("Back to overview"):
         session.leave_workflow()
         st.rerun()
@@ -62,21 +66,41 @@ def _render_workflow() -> None:
         st.rerun()
 
 
+def _render_screen(in_workflow: bool) -> None:
+    if in_workflow:
+        _render_workflow()
+    else:
+        pages_landing.render()
+
+
 def main() -> None:
     in_workflow = session.has_entered()
 
     st.set_page_config(
         page_title=WORKFLOW_TITLE if in_workflow else LANDING_TITLE,
-        page_icon="🏠",
+        # The brand favicon, from the local asset pack. A file path keeps the
+        # browser tab consistent with the header logo; an emoji did not.
+        page_icon=str(theme.FAVICON_PATH),
         layout="wide",
         initial_sidebar_state="collapsed" if not in_workflow else "auto",
     )
+    # The lockup in the sidebar, the mark when the sidebar is collapsed. Both are
+    # documented `st.logo` parameters, so the header chrome stays Streamlit's.
+    st.logo(
+        str(theme.LOGO_PATH),
+        icon_image=str(theme.SYMBOL_PATH),
+        size="medium",
+    )
     theme.inject_css()
 
-    if in_workflow:
-        _render_workflow()
-    else:
-        pages_landing.render()
+    # The centred content column (DESIGN_SYSTEM.md §5). A flex row centred with
+    # `horizontal_alignment` holds one fixed-width container: both are documented
+    # `st.container` parameters, so no Streamlit internal DOM is targeted. On a
+    # narrow screen the inner container's `max-width: 100%` takes over, so the
+    # page never overflows sideways — verified at 390 px and at 1560 px.
+    with st.container(horizontal=True, horizontal_alignment="center"):
+        with st.container(width=theme.CONTENT_WIDTH):
+            _render_screen(in_workflow)
 
 
 if __name__ == "__main__":

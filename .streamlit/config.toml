@@ -4,8 +4,31 @@ primaryColor = "#4B5147"
 backgroundColor = "#F6F4EF"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#292B27"
-font = "sans serif"
+
+# One typeface stack for the whole application (DESIGN_SYSTEM.md §4).
+#
+# This string is duplicated verbatim in `ui.theme.FONT_FAMILY`, and a test pins
+# the two together. Before UI V2 this key read "sans serif", so Streamlit's own
+# widgets rendered in Source Sans while every HTML fragment in `ui.theme`
+# asked for Inter/Arial: one screen, two typefaces. Setting it here is the
+# only way to reach Streamlit-owned controls without targeting their internal
+# DOM, and it needs no dependency and no downloaded font.
+font = "Inter, Arial, sans-serif"
+headingFont = "Inter, Arial, sans-serif"
 baseFontSize = 15
+baseFontWeight = 400
+# h1-h6. The design system sets every level at 600; Streamlit's default would
+# render an h1 at 700, which is heavier than the approved hierarchy.
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+
+# Widget chrome. `ui.theme.RADIUS` holds the same two values, so a card drawn in
+# HTML and a card drawn by Streamlit round by the same amount.
+baseRadius = "12px"
+buttonRadius = "10px"
+borderColor = "#E4E1D9"
+# Inputs keep a visible border: the warm background and the white surface are
+# close enough in value that a borderless field loses its edge.
+showWidgetBorder = true
 
 [server]
 headless = true

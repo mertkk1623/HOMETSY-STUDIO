@@ -33,7 +33,7 @@ diyagram olarak değil — göstermek için vardır.
 - [C. Ürün iş akışı](#c-ürün-iş-akışı)
 - [D. Temel yetenekler](#d-temel-yetenekler)
 - [E. Mühendislik ve operasyonel mantık](#e-mühendislik-ve-operasyonel-mantık)
-- [F. Çıktılar](#f-çıktılar)
+- [F. Görsel anlatım ve çıktılar](#f-görsel-anlatım-ve-çıktılar)
 - [G. Doğrulama ve güvenilirlik](#g-doğrulama-ve-güvenilirlik)
 - [H. Mevcut kapsam ve sınırlamalar](#h-mevcut-kapsam-ve-sınırlamalar)
 - [I. Yol haritası](#i-yol-haritası)
@@ -462,79 +462,107 @@ yazılan hiçbir şey bir dosyanın nereye düşeceğini seçemez.
 
 ---
 
-## F. Çıktılar
+## F. Görsel anlatım ve çıktılar
 
-Aşağıdaki tüm ekran görüntüleri, 1440 px genişlikte çalışan uygulamadan alınmış
-kayıtlardır. Depo belgeleri boyunca kullanılan tek bir gösterim projesi
-yapılandırmasından gelirler:
+Aşağıdaki her görsel, 1440 × 1000 boyutunda çalışan uygulamadan alınmış bir
+kayıttır ve yerelde Pillow ile açıklanmıştır. Ekran görüntüsü alanı olduğu gibi
+bırakılmıştır; numaralı işaretler, açıklamalar ve lejant çevresindeki boş alana
+çizilmiştir. Hiçbir arayüz yeniden çizilmedi, rötuşlanmadı veya üretilmedi;
+açıklamasız orijinaller `docs/screenshots/uiv2-originals/` altında ayrıca
+saklanır.
+
+Yedisinin tamamı tek bir gösterim projesinin tek oturumundan gelir, bu yüzden
+rakamları birbiriyle uyuşur:
 
 > **Oda:** Şişli Salonu, oturma odası, 400 × 500 cm (20.00 m²), 270 cm tavan,
-> güney duvarında 90 cm genişliğinde kapı, kuzey duvarında 160 cm genişliğinde
-> pencere.
+> güney duvarında 60 cm konumda 90 cm genişliğinde kapı, kuzey duvarında 120 cm
+> konumda 160 cm genişliğinde pencere.
 > **Tercihler:** Japandi, Warm Neutral, 45.000 TRY bütçe.
-> **Sonuç:** 6 katalog parçası, 7 kopya yerleştirildi, 42.200,00 TRY mobilya
-> toplamı, tam ve geçerli yerleşim.
+> **Sonuç:** 4 katalog parçası, 5 kopya yerleştirildi, tam ve geçerli yerleşim,
+> yerleşim puanı 0.84, 39.700,00 TRY gösterge niteliğinde mobilya toplamı —
+> sınırın %88,2'si, 5.300,00 TRY kalan.
 
-Ekran görüntülerindeki rakamlar o projenin rakamlarıdır. Bunlar tek bir işlenmiş
-örnektir, bir kıyas ölçütü değil.
+Bunlar tek bir işlenmiş örnektir, bir kıyas ölçütü değil.
 
-Görsellerin kendileri hakkında bir uyarı: aşağıda kullanılan dokuz ekran görüntüsü
-o projenin tek bir oturumunda alınmıştır, bu yüzden rakamları birbiriyle uyuşur.
-Daha geniş `docs/screenshots/` klasörü başka çalıştırmalardan da kayıtlar içerir —
-örneğin 420 × 540 cm'lik ikinci bir proje — bu yüzden görseller birbirinin yerine
-geçebilir parçalar olarak değil, ait oldukları kümenin parçası olarak okunmalıdır.
+### 1. Oda tanımı
 
-### Oda ve tercihler
+![Oda tanımı, açıklamalı](docs/screenshots/portfolio/v2/01-room-definition.png)
 
-| Oda tanımı | Tasarım tercihleri |
-|---|---|
-| ![Oda kurulumu](docs/screenshots/portfolio/02-room-definition.png) | ![Tasarım tercihleri](docs/screenshots/portfolio/03-design-preferences.png) |
+Santimetre cinsinden tanımlanan tek bir dikdörtgen oda: dört zemin ölçüsü, bir
+tavan yüksekliği ve her biri duvar, o duvarın başlangıç köşesinden konum ve net
+genişlik olarak verilen bir kapı ile bir pencere. Ölçüler iki kez doğrulanır —
+oluşturulurken şema tarafından, ardından oda motoru tarafından kendi koşullarıyla
+— çünkü motor, çağıranın geçerli bir model kurduğunu varsaymaz. Bu ekranda ağ
+çağrısı yapılmaz.
 
-Oda formu ölçüleri santimetre olarak alır ve kapı ile pencerenin duvarını, konumunu
-ve genişliğini sorar. Tercihler ekranı yerel stil ve palet kütüphanesini gösterir;
-bu görseller referans malzemedir, yapay zekâya gönderilmez ve ekran bunu söyler.
+### 2. Yapay zekâ destekli tasarım konseptleri
 
-### Konseptler
+![Üç tasarım konsepti, açıklamalı](docs/screenshots/portfolio/v2/02-ai-design-concepts.png)
 
-![Üç tasarım konsepti](docs/screenshots/portfolio/04-ai-design-concepts.png)
+Analiz edilen brief'ten üretilen üç yazılı yön. Seçilen stili ve paleti paylaşır
+ama odayı farklı biçimde düzenler; her biri kendi gerekçesini, mobilya
+yaklaşımını, renk yönünü ve bütçe uygunluğu notunu taşır. Konsept sayısı ve
+başlıkların birbirinden farklı olması varsayılmaz, şema doğrulamasıyla
+zorunlanır. Bu ekrandaki görsel yerel bir stil referansıdır: modele gönderilmez
+ve hiçbir konseptin tasviri değildir.
 
-Brief'ten yazılmış, seçilen stili ve paleti paylaşan ama odayı farklı biçimde
-düzenleyen üç konsept. Stil referans görseli, konseptin tasviri olarak değil,
-referans olarak açıklanır.
+### 3. Mobilya önerileri
 
-### Öneriler ve yerleştirme
+![Mobilya önerileri, açıklamalı](docs/screenshots/portfolio/v2/03-furniture-recommendations.png)
 
-| Mobilya ve malzemeler | Ölçülendirilmiş 2D plan |
-|---|---|
-| ![Mobilya ve malzemeler](docs/screenshots/portfolio/05-furniture-recommendations.png) | ![2D kat planı](docs/screenshots/portfolio/06-2d-floor-plan.png) |
+Model katalog parçalarını kimlik ve adetle, gerekçesiyle birlikte seçer. Ardından
+Python bu kimlikleri kataloğa göre çözer, kopyaları yerleştirir ve bilinçli
+olarak birleştirilmeyen üç ayrı yanıt bildirir: bir kalite puanı (0.84), bir
+yerleştirme sayısı (5 / 5 kopya) ve bir geometrik karar (geçerli). Puan kararı
+belirlemez; geçerli bir yerleşim düşük puan alabilir.
 
-Öneri tablosu her parçanın katalog ölçüsünü ve seçilme gerekçesini verir. Plan
-yerleştirilmiş koordinatlardan çizilir, bu yüzden 90° döndürülmüş 180 × 90 cm'lik
-bir kanepe çizimde ve altındaki tabloda 90 × 180 cm olarak görünür.
+### 4. Hesaplanan koordinatlardan çizilen 2D plan
 
-### Doğrulama, değerlendirme ve bütçe
+![2D kat planı, açıklamalı](docs/screenshots/portfolio/v2/04-2d-floor-plan.png)
 
-| Mekânsal doğrulama | Tasarım değerlendirmesi |
-|---|---|
-| ![Mekânsal doğrulama](docs/screenshots/portfolio/07-spatial-validation.png) | ![Tasarım değerlendirmesi](docs/screenshots/portfolio/08-design-evaluation.png) |
+Plan, yerleştirilmiş ayak izlerinden çizilir — katalog genişliği × derinliği,
+uygulanan döndürme ve güneybatı köşesinden santimetre cinsinden ölçülen konum.
+Oda ölçüleri çizimin üstünde yazılıdır, böylece çizim girdiye karşı denetlenebilir
+ve taban alanı yalnızca sunum sınırında metrekareye çevrilir. Çizim örnekleyicidir:
+bir inşaat çizimi veya bir metraj listesi değildir.
 
-Doğrulama ekranı yerleştirilen ölçüleri, döndürmeleri ve konumları, motorun
-kararını ve puanın ölçüt bazında ağırlık ve katkıyla dökümünü gösterir; böylece
-rakam güvenilmek yerine denetlenebilir.
+### 5. Mekânsal doğrulama
 
-![Bütçe analizi](docs/screenshots/portfolio/09-budget-analysis.png)
+![Mekânsal doğrulama, açıklamalı](docs/screenshots/portfolio/v2/05-spatial-validation.png)
 
-Bütçe ekranı mobilya toplamını malzeme girdilerinden ayırır; malzemeler sıfır
-olarak sayılmak yerine *fiyatlandırılmamış* olarak listelenir. Maliyet dağılımı
-aynı satır öğelerinden çizilir.
+Sınır içinde kalma, çakışma, kapı yaklaşımı ve pencere bandı, koordinatlardan
+kararlaştırılır ve üretildiği yerleştirme aramasından bağımsızdır. Hata ile uyarı
+ayrımı yük taşır: kapı bandına giren bir ayak izi yerleşimi reddeder, pencere
+bandına giren bir ayak izi bildirilir ve engellemez. Ağırlıklı puan satır satır
+dökülür, böylece rakam güvenilmek yerine denetlenebilir.
 
-### Rapor
+### 6. Puan dökümü ve arkasındaki kurallar
 
-![Nihai rapor ekranı](docs/screenshots/portfolio/10-pdf-report.png)
+![Puan dökümü, açıklamalı](docs/screenshots/portfolio/v2/05b-score-breakdown.png)
 
-Rapor ekranı PDF'in neyi içereceğini özetler ve indirmeyi sunar. Proje değişene
-kadar kullanılabilir kalır; bir değişiklik, bayat bir belgenin indirilmesine izin
-vermek yerine raporu siler.
+Aynı ekran, dökümün üzerine çerçevelenmiştir: belirtik ağırlıklarla altı ölçüt ve
+satır başına katkı, ardından gerçekten uygulanmış iki boşluk bandı. Sınır içinde
+kalma ve çakışma ağırlık taşır, böylece bir üretim kusuru puandan kaybolmak
+yerine puanı düşürür. Alttaki metin, modelin bu hesaplanmış sonuçları
+yorumlamasıdır; rakamlar ona verilir, onun tarafından üretilmez.
+
+### 7. Bütçe analizi
+
+![Bütçe analizi, açıklamalı](docs/screenshots/portfolio/v2/06-budget-analysis.png)
+
+Satır başına birim maliyet × adet, `Decimal` içinde kuruşa yarım-yukarı
+yuvarlanmış ara toplam ve kayıtlı sınıra karşı bir karşılaştırma. Toplamlar,
+kalan tutar ve bütçe içinde kararı, aynı sepetten Python'da hesaplanır; modelden
+fiyat eklemesi, sepet toplaması veya karşılanabilirlik yargısı istenmez.
+Malzemeler sıfır olarak sayılmak yerine *fiyatlandırılmamış* olarak listelenir.
+
+### Üretilen rapor
+
+Nihai rapor ekranı PDF'in neyi içereceğini özetler ve indirmeyi sunar. Proje
+değişene kadar kullanılabilir kalır; bir değişiklik, bayat bir belgenin
+indirilmesine izin vermek yerine raporu siler. Yukarıda gösterilmemiştir çünkü
+açıklamalı küme o ekranın kaydından önce oluşturulmuştur; üretilen belgenin
+kendisi zaten daha iyi kanıttır.
 
 Depoya eklenmiş bir örnek rapor
 `reports/phase-6/sample/hometsy-sisli-salonu-report.pdf` adresinde bulunur — 11
@@ -542,8 +570,9 @@ sayfa: kapak (A bölümü) artı dokuz gövde bölümü, B–J. Bölümler sayfa
 eşleşmez; örneğin plan bölümü bir sayfayı çizim, sonraki sayfayı yerleştirilen
 parçalar tablosu için kullanır. `generate_report()` tarafından yapay zekâ çağrısı
 ve ağ erişimi olmadan deterministik olarak üretilir; ikinci bir test projesinden
-(400 × 520 cm, Industrial, on yerleştirilmiş parça, 58.600,00 TRY mobilya ara
-toplamı) geldiği için rakamları yukarıdaki ekran görüntülerinden farklıdır. O
+(400 × 520 cm, Industrial, sekiz katalog parçası, on kopya yerleştirilmiş,
+58.600,00 TRY mobilya ara toplamı) geldiği için rakamları yukarıdaki ekran
+görüntülerinden farklıdır. O
 dosyanın sayfa sayfa yazılı doğrulaması `reports/phase-6/PDF_SAMPLE_NOTES.md`
 içindedir.
 
@@ -573,17 +602,15 @@ başarısız olduğu doğrulanarak denetlendi — aşağıda anlatılan başlık
 
 ### Otomatik yazılım testi
 
-Kayıtlı V1 temel çizgisi:
+Kayıtlı V1 temel çizgisi, sürüm ağacında yeniden çalıştırılmıştır:
 
 ```
-1.149 geçti, 0 başarısız, 0 atlandı
+1.234 geçti, 0 başarısız, 0 atlandı
 ```
 
 İki kayıt düşülmelidir. Birincisi, paket canlı bir API anahtarı gerektirmez ve
 hiçbir ağ çağrısı yapmaz; yapay zekâ katmanı testleri kurgulanmış ve kaydedilmiş
-yanıtları yeniden oynatır. İkincisi, bu rakam bu belge için **yeniden
-çalıştırılmadı** — yayın raporlarındaki kayıtlı sonuçtur ve toplama sayısının
-1.149 test olduğu doğrulanmıştır. Geçen bir paket, doğrulanan kuralların geçerli
+yanıtları yeniden oynatır. İkincisi, geçen bir paket, doğrulanan kuralların geçerli
 olduğuna dair kanıttır, doğruluk garantisi değildir ve büyüklüğü bir kalite puanı
 değildir.
 

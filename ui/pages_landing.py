@@ -25,6 +25,22 @@ SHORT_INTRO = (
     "professional PDF report."
 )
 
+#: The hero photograph's alt text. It describes the room in words, because the
+#: picture is the only thing on the page a screen reader cannot reach by itself.
+#: It deliberately says nothing about the AI: the model never receives this file
+#: (``DESIGN_SYSTEM.md`` §9), and alt text is the easiest place to imply
+#: otherwise by accident.
+HERO_IMAGE_ALT = (
+    "An illustrative living room in a warm Japandi style: a pale corner sofa "
+    "with olive and terracotta cushions, a round travertine coffee table holding "
+    "a vase of olive branches, and a tall arched floor lamp beside a window."
+)
+
+#: The visible caption. It states the same thing the alt text cannot: that this
+#: is a picture of the *kind* of room the product plans, not a generated concept
+#: and not something the model has seen.
+HERO_IMAGE_CAPTION = "Illustrative interior — not generated or analysed by the AI."
+
 ROADMAP = [
     (
         "V1",
@@ -66,18 +82,25 @@ ROADMAP = [
 #: version can never be presented as finished, nor a finished one as pending.
 BADGE_LABELS = {"complete": "Complete", "planned": "Planned"}
 
+#: The three things the product actually does, each with the icon that names it.
+#: The icon repeats the title visually and is ``aria-hidden``; the title is the
+#: thing a reader navigates by, so the pairing adds only recognition, not a
+#: second channel a screen reader has to reconcile.
 CAPABILITIES = [
     (
         "Structured requirements",
         "A validated design brief instead of an unstructured chat transcript.",
+        "projects",
     ),
     (
         "Deterministic geometry",
         "Room, openings and furniture checked in centimeters by Python.",
+        "plan",
     ),
     (
         "Transparent budget",
         "Illustrative costs calculated and totalled by the application.",
+        "report",
     ),
 ]
 
@@ -89,20 +112,46 @@ def _render_hero() -> None:
     three sections down — below the fold on a 1000 × 700 window, which is the
     one thing §6.1 asks the landing page to get right ("Primary start action").
     It now follows the hero, where the reader decides whether to continue.
+
+    The hero is two columns: the copy on the left, and one illustrative interior
+    photograph on the right. The photograph is decoration. It is not uploaded,
+    not sent to the model, and not analysed — the alt text and the caption both
+    say what it is, because ``DESIGN_SYSTEM.md`` §9 forbids implying that the
+    model has looked at a local image.
+
+    The five stage names stay inside the hero but span its full width beneath
+    both columns: in a 511 px text column the line wrapped mid-stage ("Final
+    Report" split across two lines), which read as a list of six stages.
     """
 
     import streamlit as st
 
-    theme.html_block(
-        f'<div class="hm-hero">'
-        f'<p class="hm-eyebrow">{theme.escape(APP_TAGLINE)}</p>'
-        f"{theme.page_title(APP_TITLE)}"
-        f'<p class="hm-intro">{theme.escape(SHORT_INTRO)}</p>'
+    with st.container(key="hm-hero-panel"):
+        copy, media = st.columns([1, 1], gap="large", vertical_alignment="center")
+        with copy:
+            theme.html_block(
+                f"{theme.brand_mark()}"
+                f'<p class="hm-eyebrow">{theme.escape(APP_TAGLINE)}</p>'
+                f"{theme.page_title(APP_TITLE)}"
+                f'<p class="hm-intro">{theme.escape(SHORT_INTRO)}</p>'
+            )
+        with media:
+            # The key is what the narrow-screen rule hides. Keeping the image in
+            # its own container means the rule targets one hook, not a guess at
+            # Streamlit's column structure.
+            with st.container(key="hm-hero-media"):
+                st.image(
+                    str(theme.HERO_IMAGE_PATH),
+                    width="stretch",
+                    alt=HERO_IMAGE_ALT,
+                    caption=HERO_IMAGE_CAPTION,
+                )
         # The five stage names come from the shell's own table, so the hero
         # cannot advertise a journey the workflow does not walk.
-        f'<p class="hm-flow">{theme.escape(" → ".join(name for name, _ in STAGES))}</p>'
-        "</div>"
-    )
+        theme.html_block(
+            f'<p class="hm-flow">'
+            f'{theme.escape(" → ".join(name for name, _ in STAGES))}</p>'
+        )
 
     theme.html_block(
         '<p class="hm-cta-note">No account, no setup: the first screen asks '
@@ -130,14 +179,9 @@ def _render_capabilities() -> None:
 
     theme.html_block(theme.section_heading("What it does"))
     columns = st.columns(len(CAPABILITIES), gap="medium")
-    for column, (title, text) in zip(columns, CAPABILITIES):
+    for column, (title, text, icon_name) in zip(columns, CAPABILITIES):
         with column:
-            theme.html_block(
-                f'<div class="hm-card">'
-                f"{theme.card_heading(title)}"
-                f'<p class="hm-card-text">{theme.escape(text)}</p>'
-                "</div>"
-            )
+            theme.html_block(theme.capability(title, text, icon_name=icon_name))
 
 
 def _render_roadmap() -> None:

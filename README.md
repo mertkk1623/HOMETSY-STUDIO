@@ -33,7 +33,7 @@ working application with tests, not as an architectural diagram.
 - [C. Product workflow](#c-product-workflow)
 - [D. Core capabilities](#d-core-capabilities)
 - [E. Engineering and operational logic](#e-engineering-and-operational-logic)
-- [F. Outputs](#f-outputs)
+- [F. Visual walkthrough and outputs](#f-visual-walkthrough-and-outputs)
 - [G. Validation and reliability](#g-validation-and-reliability)
 - [H. Current scope and limitations](#h-current-scope-and-limitations)
 - [I. Roadmap](#i-roadmap)
@@ -469,80 +469,111 @@ into the application can choose where a file lands.
 
 ---
 
-## F. Outputs
+## F. Visual walkthrough and outputs
 
-All screenshots below are captures of the running application at 1440 px wide.
-They come from one demonstration project configuration, used throughout the
-repository's documentation:
+Every image below is a capture of the running application at 1440 × 1000,
+annotated locally with Pillow. The screenshot area is the untouched frame; the
+numbered callouts, captions and legend are drawn on a margin around it. No
+interface was redrawn, retouched or generated, and the unannotated originals are
+kept alongside in `docs/screenshots/uiv2-originals/`.
+
+All seven come from one session of one demonstration project, so their figures
+agree with each other:
 
 > **Room:** Şişli Living Room, living room, 400 × 500 cm (20.00 m²), 270 cm
-> ceiling, door on the south wall 90 cm wide, window on the north wall 160 cm
-> wide.
+> ceiling, door on the south wall 90 cm wide at a 60 cm offset, window on the
+> north wall 160 cm wide at a 120 cm offset.
 > **Preferences:** Japandi, Warm Neutral, 45,000 TRY budget.
-> **Result:** 6 catalog items, 7 copies placed, 42,200.00 TRY furniture total,
-> complete and valid layout.
+> **Result:** 4 catalog items, 5 copies placed, complete and valid layout,
+> layout score 0.84, 39,700.00 TRY indicative furniture total — 88.2% of the
+> limit, with 5,300.00 TRY remaining.
 
-The figures in the screenshots are that project's. They are one worked example,
-not a benchmark.
+Those are one worked example, not a benchmark. The interface formats money in
+the Turkish convention (`39.700,00 TRY`); this document writes the same amounts
+with English separators.
 
-One caveat about the images themselves: the nine screenshots used below were
-captured in a single session of that project, so their figures agree with
-each other. The wider `docs/screenshots/` folder also contains captures from
-other runs — a second project at 420 × 540 cm, for example — so images should be
-read as part of the set they belong to rather than treated as interchangeable.
+### 1. Room definition
 
-### Room and preferences
+![Room definition, annotated](docs/screenshots/portfolio/v2/01-room-definition.png)
 
-| Room definition | Design preferences |
-|---|---|
-| ![Room setup](docs/screenshots/portfolio/02-room-definition.png) | ![Design preferences](docs/screenshots/portfolio/03-design-preferences.png) |
+One rectangular room, described in centimetres: four floor dimensions, a
+ceiling height, and one door and one window each given as a wall, an offset from
+that wall's starting corner and a clear width. The dimensions are validated
+twice — by the schema at construction, then by the room engine on its own
+terms — because the engine does not assume its caller built a valid model. No
+network call happens on this screen.
 
-The room form takes dimensions in centimetres and asks for the wall, offset and
-width of the door and window. The preferences screen shows the local style and
-palette library; those images are reference material, are not sent to the AI,
-and the screen says so.
+### 2. AI-assisted design concepts
 
-### Concepts
+![Three design concepts, annotated](docs/screenshots/portfolio/v2/02-ai-design-concepts.png)
 
-![Three design concepts](docs/screenshots/portfolio/04-ai-design-concepts.png)
+Three written directions, generated from the analysed brief. They share the
+chosen style and palette but organise the room differently, and each carries its
+own rationale, furniture approach, colour direction and budget suitability note.
+The concept count and the distinctness of the titles are enforced by schema
+validation rather than assumed. The illustration on this screen is a local style
+reference: it is not sent to the model and is not a depiction of any concept.
 
-Three concepts written from the brief, sharing the chosen style and palette but
-organising the room differently. The style reference image is captioned as
-reference, not as a depiction of the concept.
+### 3. Furniture recommendations
 
-### Recommendations and placement
+![Furniture recommendations, annotated](docs/screenshots/portfolio/v2/03-furniture-recommendations.png)
 
-| Furniture and materials | Dimensioned 2D plan |
-|---|---|
-| ![Furniture and materials](docs/screenshots/portfolio/05-furniture-recommendations.png) | ![2D floor plan](docs/screenshots/portfolio/06-2d-floor-plan.png) |
+The model selects catalog items by ID and quantity with a stated reason. Python
+then resolves those IDs against the catalog, places the copies, and reports three
+separate answers that are deliberately not merged: a quality score (0.84), a
+placement count (5 of 5 copies), and a geometric verdict (valid). The score does
+not decide the verdict, and a valid layout can still score low.
 
-The recommendation table gives each item's catalog size and the reason it was
-chosen. The plan is drawn from the placed coordinates, so a 180 × 90 cm sofa
-rotated 90° appears as 90 × 180 cm on the drawing and in the table beneath it.
+### 4. 2D plan drawn from computed coordinates
 
-### Validation, evaluation and budget
+![2D floor plan, annotated](docs/screenshots/portfolio/v2/04-2d-floor-plan.png)
 
-| Spatial validation | Design evaluation |
-|---|---|
-| ![Spatial validation](docs/screenshots/portfolio/07-spatial-validation.png) | ![Design evaluation](docs/screenshots/portfolio/08-design-evaluation.png) |
+The plan is rendered from the placed footprints — catalog width × depth, applied
+rotation, and a position measured in centimetres from the south-west origin.
+Room dimensions are printed above the drawing so it can be checked against the
+input, and floor area is converted to square metres only at the presentation
+boundary. The drawing is illustrative: it is not a construction drawing or a
+bill of quantities.
 
-The validation screen shows the placed sizes, rotations and positions, the
-engine's verdict, and the score broken down by criterion with weight and
-contribution, so the number can be audited rather than trusted.
+### 5. Spatial validation
 
-![Budget analysis](docs/screenshots/portfolio/09-budget-analysis.png)
+![Spatial validation, annotated](docs/screenshots/portfolio/v2/05-spatial-validation.png)
 
-The budget screen separates the furniture total from the material entries,
-which are listed as *not priced* rather than counted at zero. Cost distribution
-is drawn from the same line items.
+Boundary fit, overlap, door approach and window band, decided from the
+coordinates and independent of the placement search that produced them. The
+distinction between an error and a warning is load-bearing: a footprint in the
+door band rejects the layout, while a footprint in the window band is reported
+and does not block it. The weighted score is decomposed row by row, so the
+number can be audited instead of trusted.
 
-### The report
+### 6. Score breakdown and the rules behind it
 
-![Final report screen](docs/screenshots/portfolio/10-pdf-report.png)
+![Score breakdown, annotated](docs/screenshots/portfolio/v2/05b-score-breakdown.png)
 
-The report screen summarises what the PDF will contain and offers the download.
-It stays available until the project changes; a change discards it rather than
-letting a stale document be downloaded.
+The same screen, framed on the decomposition: six criteria with explicit weights
+and a contribution per row, then the two clearance bands that were actually
+applied. Boundary fit and overlap carry weight so that a generation defect lowers
+the score rather than disappearing from it. The prose underneath is the model
+interpreting these computed results; it is handed the figures and never produces
+them.
+
+### 7. Budget analysis
+
+![Budget analysis, annotated](docs/screenshots/portfolio/v2/06-budget-analysis.png)
+
+Unit cost × quantity per line, a subtotal in `Decimal` rounded half-up to kuruş,
+and a comparison against the saved limit. Totals, the remainder and the
+within-budget verdict are all computed in Python from the same basket; the model
+is not asked to add a price, total a basket or judge affordability. Materials
+are listed as *unpriced* rather than counted at zero.
+
+### The generated report
+
+The final report screen summarises what the PDF will contain and offers the
+download. It stays available until the project changes; a change discards it
+rather than letting a stale document be downloaded. It is not shown above,
+because the annotated set predates a capture of that screen; the generated
+document itself is the better evidence anyway.
 
 A committed sample report is available at
 `reports/phase-6/sample/hometsy-sisli-salonu-report.pdf` — 11 pages: the cover
@@ -550,9 +581,9 @@ A committed sample report is available at
 pages; the plan section, for instance, uses one page for the drawing and the
 next for the placed-pieces table. It is generated deterministically by
 `generate_report()` with no AI call and no network access, from a second test
-project (400 × 520 cm, Industrial, ten placed items, 58,600.00 TRY furniture
-subtotal), so its figures differ from the screenshots above. The written
-page-by-page verification of that file is in
+project (400 × 520 cm, Industrial, eight catalog items, ten copies placed,
+58,600.00 TRY furniture subtotal), so its figures differ from the screenshots
+above. The written page-by-page verification of that file is in
 `reports/phase-6/PDF_SAMPLE_NOTES.md`.
 
 ---
@@ -567,8 +598,9 @@ performance.
 
 The nine screens are driven end to end through Streamlit's own `AppTest`
 harness, so the tests exercise the real application object rather than a
-reimplementation of it. Screen-by-screen captures of both the pre-action and
-post-action states are kept in `docs/screenshots/`.
+reimplementation of it. Captures of the running interface are kept in
+`docs/screenshots/`; the seven annotated images above are the ones this document
+uses.
 
 ### Geometric and business-rule validation
 
@@ -581,18 +613,16 @@ tests fail — the heading fix described below was checked that way.
 
 ### Automated software testing
 
-The recorded V1 baseline is:
+The recorded V1 baseline, re-run on the release tree:
 
 ```
-1,149 passed, 0 failed, 0 skipped
+1,234 passed, 0 failed, 0 skipped
 ```
 
 Two qualifications. First, the suite does not require a live API key and makes
 no network call; the AI-layer tests replay constructed and recorded responses.
-Second, this figure was **not** re-executed for this document — it is the
-recorded result in the release reports, and the collection count was confirmed
-to be 1,149 tests. A passing suite is evidence that the asserted rules hold, not
-a guarantee of correctness, and its size is not a quality score.
+Second, a passing suite is evidence that the asserted rules hold, not a
+guarantee of correctness, and its size is not a quality score.
 
 ### Responsive interface verification
 

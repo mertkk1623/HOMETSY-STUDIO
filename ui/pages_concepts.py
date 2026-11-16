@@ -195,15 +195,22 @@ def render() -> None:
     theme.html_block(theme.group_heading("Concepts"))
     if concepts_current and state.concepts is not None:
         selected = state.selected_concept
-        columns = st.columns(len(state.concepts.concepts), gap="medium")
-        chosen: DesignConcept | None = None
-        for index, (column, concept) in enumerate(
-            zip(columns, state.concepts.concepts)
-        ):
-            with column:
-                is_selected = selected is not None and selected.name == concept.name
-                if _concept_card(concept, index=index, selected=is_selected):
-                    chosen = concept
+        # The row is a keyed container so the stylesheet can equalise the three
+        # cards through a hook this application mints, rather than by guessing at
+        # Streamlit's column classes. Aligning the buttons to one baseline is a
+        # layout fix only: every card still renders its whole concept text.
+        with st.container(key="hm-concepts-row"):
+            columns = st.columns(len(state.concepts.concepts), gap="medium")
+            chosen: DesignConcept | None = None
+            for index, (column, concept) in enumerate(
+                zip(columns, state.concepts.concepts)
+            ):
+                with column:
+                    is_selected = (
+                        selected is not None and selected.name == concept.name
+                    )
+                    if _concept_card(concept, index=index, selected=is_selected):
+                        chosen = concept
         if chosen is not None:
             _select(state, chosen)
         if selected is not None:

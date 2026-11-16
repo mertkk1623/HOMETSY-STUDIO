@@ -39,6 +39,11 @@ under the terms of its own licence.
 | Component | Location | Terms |
 |---|---|---|
 | **DejaVu Sans** (fonts) | `assets/fonts/DejaVuSans.ttf`, `assets/fonts/DejaVuSans-Bold.ttf` | Bitstream Vera Fonts Copyright © 2003 Bitstream, Inc.; DejaVu changes are in the public domain; Arev-derived glyphs © 2006 Tavmjong Bah. Full text in `assets/fonts/DejaVu-LICENSE.txt` and reproduced in part in §4 below. |
+| **HOMETSY brand assets** (logo, symbol, favicon) | `assets/brand/` | Original assets created for this project. Covered by §1 above — no separate licence is granted. |
+| **HOMETSY icon set** (17 line icons) | `assets/icons/` | Original assets created for this project. Covered by §1 above. |
+| **HOMETSY hero image** (source) | `assets/images/hero-living-room.png` | Original AI-generated image, produced with ChatGPT ImageGen. Governed by §5 below, the same terms as the reference imagery. |
+| **HOMETSY hero image** (runtime) | `assets/images/hero-living-room.jpg` | Downscaled JPEG derivative of the source above, re-encoded to 1280 × 720 for the landing page. Same origin and same terms as the source image; not a separately generated asset. |
+| **Inter** (typeface) | **not included** | Inter is the approved typeface in `DESIGN_SYSTEM.md` §4 but is **not bundled** with this project. No Inter font file is present and none is downloaded at runtime; the interface falls back to Arial and then to the system sans-serif. See §6. |
 | **Python packages** (Streamlit, Pydantic, Matplotlib, ReportLab, Pytest, and others) | installed at runtime via `requirements.txt`; not vendored here | Each package's own licence |
 
 The DejaVu font licence requires its copyright and permission notices to
@@ -100,7 +105,39 @@ No ownership is claimed over any third-party trademark, brand name or product
 design that may be referenced descriptively in the furniture catalog or
 documentation.
 
-## 6. Reporting infringement
+## 6. Typeface status (Inter)
+
+`DESIGN_SYSTEM.md` §4 names **Inter** as the interface typeface. It is **not
+included in this repository**:
+
+- no `.woff2`/`.woff`/`.ttf` file for Inter exists under `assets/fonts/`,
+- no `@font-face` rule loads one,
+- no remote font service is contacted (`AGENTS.md` §11 forbids it),
+- `theme.FONT_FAMILY` is `"Inter, Arial, sans-serif"`, which resolves to Arial
+  on a machine without Inter and to Inter on one that has it installed.
+
+Adding Inter would require the following files, all under the **SIL Open Font
+License, Version 1.1**, together with the verbatim `OFL.txt` that the licence
+requires to accompany them:
+
+| File | Weight | Style |
+|---|---|---|
+| `Inter-Regular.woff2` | 400 | normal |
+| `Inter-Medium.woff2` | 500 | normal |
+| `Inter-SemiBold.woff2` | 600 | normal |
+| `Inter-Bold.woff2` | 700 | normal |
+| `OFL.txt` | — | the licence text, unmodified |
+
+They must be obtained from the official Inter release (the `rsms/inter`
+project's own distribution) and placed in `assets/fonts/`, and registered through
+Streamlit's documented `[[theme.fontFaces]]` table. **No unverified mirror is an
+acceptable source.** Until that happens, the interface is set in Arial and this
+notice is the accurate statement of that.
+
+Inter is **not** referenced in any PDF: `core.report_generator` embeds **DejaVu
+Sans**, whose licence is recorded in §4.
+
+## 7. Reporting infringement
 
 If you believe material in this repository infringes your rights, please contact
 the repository owner through the hosting platform so the matter can be resolved.

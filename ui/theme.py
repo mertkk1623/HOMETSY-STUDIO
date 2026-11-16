@@ -5,12 +5,40 @@ one place and stay scoped. Every rule here is qualified under ``.hm-page`` (a
 class this application renders itself) or under Streamlit's documented
 ``st-key-`` class convention. Nothing targets Streamlit's internal DOM, so the
 interface stays usable if a rule fails to apply.
+
+This module also owns the brand and icon assets, because they are presentation
+and nothing else: a logo in the header, a favicon in the tab, an icon beside a
+label. Every asset is read from ``assets/`` on disk — no remote URL is ever
+constructed (AGENTS.md §11).
 """
 
 from __future__ import annotations
 
 import html
+from functools import lru_cache
+from pathlib import Path
 from typing import Final, Sequence
+
+#: Repository root, derived rather than hardcoded so the app runs from any cwd.
+PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
+
+#: Brand assets (UI V2 asset pack). All local, all licensed for this project —
+#: see ``COPYRIGHT.md`` and ``docs/design-reference/ASSET_GUIDE.md``.
+LOGO_PATH: Final[Path] = PROJECT_ROOT / "assets" / "brand" / "hometsy-logo.svg"
+LOGO_LIGHT_PATH: Final[Path] = (
+    PROJECT_ROOT / "assets" / "brand" / "hometsy-logo-light.svg"
+)
+SYMBOL_PATH: Final[Path] = PROJECT_ROOT / "assets" / "brand" / "hometsy-symbol.svg"
+FAVICON_PATH: Final[Path] = PROJECT_ROOT / "assets" / "brand" / "favicon-64.png"
+ICONS_DIR: Final[Path] = PROJECT_ROOT / "assets" / "icons"
+
+#: The landing hero photograph. The source PNG is 2.6 MB; this is the same image
+#: re-encoded as a progressive JPEG at 1280x720 (169.8 KB), which is the width
+#: the hero renders at on a 3x display. It is decorative: it illustrates the
+#: subject, and nothing reads it (``DESIGN_SYSTEM.md`` §9).
+HERO_IMAGE_PATH: Final[Path] = (
+    PROJECT_ROOT / "assets" / "images" / "hero-living-room.jpg"
+)
 
 #: Approved design-system tokens (DESIGN_SYSTEM.md §3).
 COLORS: Final[dict[str, str]] = {
@@ -55,11 +83,115 @@ SPACE: Final[dict[str, str]] = {
     "3xl": "64px",
 }
 
+#: The interface typeface stack (DESIGN_SYSTEM.md §4).
+#:
+#: Inter is the approved face but is **not bundled** with this project and no
+#: remote font is loaded (AGENTS.md §11), so the stack resolves to Arial today
+#: and to Inter on a machine where Inter happens to be installed. The important
+#: property is that it is the *same* stack everywhere: ``.streamlit/config.toml``
+#: hands Streamlit's own widgets this exact string, so a field's label and the
+#: input beneath it are never set in two different typefaces — which is what
+#: ``font = "sans serif"`` used to do (Source Sans widgets, Arial HTML).
+FONT_FAMILY: Final[str] = "Inter, Arial, sans-serif"
+
+#: Typographic scale, in pixels. ``DESIGN_SYSTEM.md`` §4 gives ranges; these are
+#: the sizes the interface actually renders, kept in one place so a heading and
+#: its section cannot drift a pixel apart.
+TYPE: Final[dict[str, str]] = {
+    "display": "34px",  # landing product title
+    "title": "30px",  # workflow screen title
+    "metric": "26px",  # one figure in a metric card
+    "section": "22px",  # landing/roadmap section
+    "group": "18px",  # form group ("Room", "Door")
+    "card": "17px",  # card name
+    "lead": "16px",  # landing intro
+    "body": "15px",  # page intro, brief summary
+    "reading": "14px",  # body copy inside cards
+    "small": "13px",  # supporting copy, tables
+    "caption": "12px",  # captions, field notes
+    "label": "11px",  # uppercase badges, table heads
+    "micro": "10px",  # issue kind
+    "metric_narrow": "21px",  # the same figure on a phone
+}
+
+#: Line heights, unitless so they scale with the type they describe.
+LINE: Final[dict[str, str]] = {
+    "none": "1.15",
+    "tight": "1.2",
+    "heading": "1.25",
+    "snug": "1.55",
+    "body": "1.6",
+    "reading": "1.65",
+    "loose": "1.7",
+}
+
+#: Corner radii. Streamlit's own widgets take ``theme.baseRadius`` /
+#: ``theme.buttonRadius`` from the same two values (see ``.streamlit/config.toml``
+#: and ``test_the_streamlit_theme_config_matches_the_design_tokens``), so a card
+#: drawn in HTML and a card drawn by Streamlit round by the same amount.
+RADIUS: Final[dict[str, str]] = {
+    "xs": "4px",
+    "sm": "8px",
+    "md": "10px",
+    "lg": "12px",
+    "xl": "16px",
+    "pill": "999px",
+}
+
+#: Reading measures. Long prose is capped in ``ch`` because a line held to ~65
+#: characters is what makes an editorial layout readable at 1440 px.
+MEASURE: Final[dict[str, str]] = {
+    "prose": "62ch",
+    "wide": "68ch",
+    "note": "78ch",
+}
+
+#: The centred content column, in CSS pixels (``DESIGN_SYSTEM.md`` §5: "use a
+#: centered content area"). ``app.py`` opens a flex row with
+#: ``horizontal_alignment="center"`` and puts this width inside it — both are
+#: documented Streamlit parameters, so no internal DOM is targeted. The value is
+#: wide enough for the 640-unit plan drawing and the six-column cost table, and
+#: narrow enough that text does not run the full width of a large monitor.
+CONTENT_WIDTH: Final[int] = 1180
+
+#: UI V2 decorative accents — strictly non-semantic.
+#:
+#: This table exists because the approved V2 direction adds warmth that the
+#: product palette has no slot for, while the brief forbids changing the product
+#: tokens. Three rules keep that from becoming a second palette:
+#:
+#: * **Disjoint from :data:`COLORS`.** No accent may name or shadow a product
+#:   token. A test asserts the two tables share no key and no value.
+#: * **Never in the PDF.** :data:`core.report_generator.PALETTE` is pinned equal
+#:   to ``COLORS`` and stays untouched, so the report does not move.
+#: * **Never carries meaning.** Accents appear only as decoration that has a text
+#:   label beside it or no meaning at all: the rule under an eyebrow, the frame
+#:   of the brand mark. No status, no control state, no body copy — so none of
+#:   them is ever load-bearing for comprehension or contrast.
+#:
+#: Only the two hues the interface actually uses are declared; the asset pack's
+#: ivory and charcoal already equal ``COLORS["background"]`` and
+#: ``COLORS["text_primary"]`` within a rounding step, so introducing them again
+#: would create two names for one colour.
+ACCENT: Final[dict[str, str]] = {
+    "terracotta": "#BD8065",
+    "olive": "#858A70",
+}
+
 APP_CSS: Final[str] = f"""
 <style>
+  /* The one stylesheet. Two kinds of selector appear below, and only these two:
+     a class this application renders itself (under ``.hm-page``), or an
+     ``st-key-`` class the application mints with ``st.container(key=...)``.
+     Nothing targets Streamlit's internal DOM, so the interface stays usable if
+     a decorative rule fails to apply (DESIGN_SYSTEM.md §13). */
   .hm-page {{
-    font-family: Inter, Arial, sans-serif;
+    font-family: {FONT_FAMILY};
+    font-size: {TYPE["body"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_primary"]};
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }}
   /* Headings carry structure; the class carries the look.
 
@@ -90,15 +222,31 @@ APP_CSS: Final[str] = f"""
     padding: 15px 0;
     letter-spacing: -0.005em;
   }}
-  .hm-page .hm-hero {{
+  /* The landing hero. It was one HTML card; it is now a Streamlit container so
+     the copy and the photograph can sit in two real columns. Only the container's
+     documented `st-key-` class is targeted, so if the key ever changes the panel
+     simply loses its surface and keeps working (§13). */
+  [class*="st-key-hm-hero-panel"] {{
     background: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 16px;
-    padding: 40px 40px 32px 40px;
+    border-radius: {RADIUS["xl"]};
+    padding: {SPACE["2xl"]} {SPACE["2xl"]} {SPACE["xl"]} {SPACE["2xl"]};
     margin-bottom: {SPACE["xl"]};
   }}
+  /* One 16:9 window for the photograph, cropped rather than distorted. The image
+     is decoration: it shows the subject the product is about, and nothing — in
+     the browser or in the model — reads it (§9). */
+  [class*="st-key-hm-hero-panel"] img {{
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border: 1px solid {COLORS["border"]};
+    border-radius: {RADIUS["lg"]};
+  }}
   .hm-page .hm-eyebrow {{
-    font-size: 12px;
+    font-size: {TYPE["caption"]};
     font-weight: 500;
     letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -106,66 +254,71 @@ APP_CSS: Final[str] = f"""
     margin: 0 0 {SPACE["md"]} 0;
   }}
   .hm-page .hm-title {{
-    font-size: 34px;
+    font-size: {TYPE["display"]};
     font-weight: 600;
-    line-height: 1.2;
+    line-height: {LINE["tight"]};
+    letter-spacing: -0.02em;
     color: {COLORS["primary_dark"]};
     margin: 0 0 {SPACE["md"]} 0;
   }}
   .hm-page .hm-intro {{
-    font-size: 16px;
-    line-height: 1.65;
-    color: {COLORS["text_primary"]};
-    max-width: 62ch;
+    font-size: {TYPE["lead"]};
+    line-height: {LINE["reading"]};
+    color: {COLORS["text_secondary"]};
+    max-width: {MEASURE["prose"]};
     margin: 0;
   }}
   .hm-page .hm-flow {{
     margin: {SPACE["lg"]} 0 0 0;
-    font-size: 14px;
+    font-size: {TYPE["small"]};
     font-weight: 500;
+    letter-spacing: 0.02em;
     color: {COLORS["primary"]};
   }}
   /* The one primary action under the landing hero. It needs to read as a
      deliberate band rather than a button that fell between two sections, so it
      carries its own top rule and generous space beneath. */
   .hm-page .hm-cta-note {{
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_secondary"]};
     margin: 0 0 {SPACE["sm"]} 0;
-    max-width: 78ch;
+    max-width: {MEASURE["note"]};
   }}
   .hm-page .hm-cta-close {{
     height: {SPACE["xl"]};
   }}
   .hm-page .hm-section-label {{
-    font-size: 22px;
+    font-size: {TYPE["section"]};
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: {COLORS["primary_dark"]};
     margin: 0 0 {SPACE["sm"]} 0;
   }}
   .hm-page .hm-section-note {{
-    font-size: 14px;
+    font-size: {TYPE["reading"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_secondary"]};
     margin: 0 0 {SPACE["md"]} 0;
   }}
   .hm-page .hm-card {{
     background: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 12px;
-    padding: 20px 22px;
+    border-radius: {RADIUS["lg"]};
+    padding: {SPACE["lg"]} {SPACE["lg"]};
     height: 100%;
     margin-bottom: {SPACE["md"]};
   }}
   .hm-page .hm-card-title {{
-    font-size: 17px;
+    font-size: {TYPE["card"]};
     font-weight: 600;
+    letter-spacing: -0.005em;
     color: {COLORS["primary_dark"]};
     margin: 0 0 6px 0;
   }}
   .hm-page .hm-card-text {{
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: {TYPE["reading"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_secondary"]};
     margin: 0;
   }}
@@ -175,18 +328,18 @@ APP_CSS: Final[str] = f"""
     color: {COLORS["text_primary"]};
   }}
   .hm-page .hm-list li {{
-    font-size: 14px;
-    line-height: 1.7;
-    margin-bottom: 4px;
+    font-size: {TYPE["reading"]};
+    line-height: {LINE["loose"]};
+    margin-bottom: {SPACE["xs"]};
   }}
   .hm-page .hm-badge {{
     display: inline-block;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
+    font-size: {TYPE["label"]};
+    font-weight: 600;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
     padding: 4px 10px;
-    border-radius: 999px;
+    border-radius: {RADIUS["pill"]};
     border: 1px solid {COLORS["border"]};
   }}
   .hm-page .hm-badge--current {{
@@ -214,8 +367,8 @@ APP_CSS: Final[str] = f"""
     border-color: {COLORS["success"]};
   }}
   .hm-page .hm-footnote {{
-    font-size: 12px;
-    line-height: 1.6;
+    font-size: {TYPE["caption"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_secondary"]};
     margin-top: {SPACE["lg"]};
   }}
@@ -223,16 +376,16 @@ APP_CSS: Final[str] = f"""
   /* ---- workflow shell ------------------------------------------------ */
   .hm-page .hm-bar {{
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: {SPACE["md"]};
     flex-wrap: wrap;
     border-bottom: 1px solid {COLORS["border"]};
-    padding-bottom: 12px;
+    padding-bottom: {SPACE["md"]};
     margin-bottom: {SPACE["lg"]};
   }}
   .hm-page .hm-bar-brand {{
-    font-size: 13px;
+    font-size: {TYPE["caption"]};
     font-weight: 600;
     letter-spacing: 0.14em;
     text-transform: uppercase;
@@ -240,9 +393,10 @@ APP_CSS: Final[str] = f"""
     margin: 0;
   }}
   .hm-page .hm-bar-meta {{
-    font-size: 12px;
+    font-size: {TYPE["caption"]};
     color: {COLORS["text_secondary"]};
     margin: 0;
+    font-variant-numeric: tabular-nums;
   }}
   .hm-page .hm-stage-strip {{
     display: flex;
@@ -255,7 +409,7 @@ APP_CSS: Final[str] = f"""
   .hm-page .hm-stage {{
     flex: 1 1 140px;
     border: 1px solid {COLORS["border"]};
-    border-radius: 10px;
+    border-radius: {RADIUS["md"]};
     padding: 10px 12px;
     background: {COLORS["surface"]};
   }}
@@ -269,66 +423,70 @@ APP_CSS: Final[str] = f"""
   }}
   .hm-page .hm-stage-name {{
     display: block;
-    font-size: 13px;
+    font-size: {TYPE["caption"]};
     font-weight: 600;
     color: {COLORS["primary_dark"]};
   }}
   .hm-page .hm-stage-state {{
     display: block;
-    font-size: 11px;
+    font-size: {TYPE["label"]};
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: {COLORS["text_secondary"]};
     margin-top: 2px;
   }}
   .hm-page .hm-page-title {{
-    font-size: 30px;
+    font-size: {TYPE["title"]};
     font-weight: 600;
-    line-height: 1.25;
+    line-height: {LINE["heading"]};
+    letter-spacing: -0.015em;
     color: {COLORS["primary_dark"]};
     margin: 0 0 10px 0;
   }}
   .hm-page .hm-page-intro {{
-    font-size: 15px;
-    line-height: 1.65;
+    font-size: {TYPE["body"]};
+    line-height: {LINE["reading"]};
     color: {COLORS["text_secondary"]};
-    max-width: 68ch;
+    max-width: {MEASURE["wide"]};
     margin: 0 0 {SPACE["lg"]} 0;
   }}
   .hm-page .hm-group {{
-    font-size: 18px;
+    font-size: {TYPE["group"]};
     font-weight: 600;
+    letter-spacing: -0.005em;
     color: {COLORS["primary_dark"]};
     margin: {SPACE["lg"]} 0 {SPACE["sm"]} 0;
   }}
   .hm-page .hm-group-note {{
-    font-size: 13px;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_secondary"]};
     margin: 0 0 12px 0;
   }}
   .hm-page .hm-field-note {{
-    font-size: 12px;
+    font-size: {TYPE["caption"]};
+    line-height: {LINE["snug"]};
     color: {COLORS["text_secondary"]};
     margin: 4px 0 0 0;
   }}
   .hm-page .hm-required {{
-    font-size: 12px;
+    font-size: {TYPE["caption"]};
     color: {COLORS["text_secondary"]};
     margin: 0 0 12px 0;
   }}
   .hm-page .hm-summary {{
     background: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 12px;
-    padding: 16px 18px;
+    border-radius: {RADIUS["lg"]};
+    padding: {SPACE["md"]} {SPACE["md"]};
     margin: {SPACE["sm"]} 0 {SPACE["md"]} 0;
   }}
   .hm-page .hm-summary-row {{
     display: flex;
     justify-content: space-between;
     gap: {SPACE["md"]};
-    font-size: 14px;
-    padding: 4px 0;
+    font-size: {TYPE["reading"]};
+    padding: {SPACE["xs"]} 0;
     border-bottom: 1px solid {COLORS["border"]};
   }}
   .hm-page .hm-summary-row:last-child {{
@@ -341,11 +499,16 @@ APP_CSS: Final[str] = f"""
     color: {COLORS["text_primary"]};
     font-weight: 500;
     text-align: right;
+    font-variant-numeric: tabular-nums;
   }}
+  /* The reference-card image. Nothing emits this class today — the card images
+     are ``st.image`` elements inside a keyed container — so it is kept only as
+     the documented hook for a future HTML-rendered card, and is styled to match
+     the ``st-key-style-*`` / ``st-key-palette-*`` treatment above it. */
   .hm-page .hm-ref-image {{
     aspect-ratio: 4 / 3;
     overflow: hidden;
-    border-radius: 8px;
+    border-radius: {RADIUS["sm"]};
     border: 1px solid {COLORS["border"]};
     background: {COLORS["surface_muted"]};
   }}
@@ -356,14 +519,15 @@ APP_CSS: Final[str] = f"""
     display: block;
   }}
   .hm-page .hm-card-name {{
-    font-size: 15px;
+    font-size: {TYPE["body"]};
     font-weight: 600;
+    letter-spacing: -0.005em;
     color: {COLORS["primary_dark"]};
     margin: 10px 0 4px 0;
   }}
   .hm-page .hm-card-copy {{
-    font-size: 13px;
-    line-height: 1.55;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["snug"]};
     color: {COLORS["text_secondary"]};
     margin: 0;
   }}
@@ -375,14 +539,14 @@ APP_CSS: Final[str] = f"""
   .hm-page .hm-swatch {{
     width: 22px;
     height: 22px;
-    border-radius: 4px;
+    border-radius: {RADIUS["xs"]};
     border: 1px solid {COLORS["border"]};
   }}
 
   /* ---- AI result blocks --------------------------------------------- */
   .hm-page .hm-brief-summary {{
-    font-size: 15px;
-    line-height: 1.7;
+    font-size: {TYPE["body"]};
+    line-height: {LINE["reading"]};
     color: {COLORS["text_primary"]};
     margin: 0 0 {SPACE["md"]} 0;
   }}
@@ -390,7 +554,7 @@ APP_CSS: Final[str] = f"""
     margin-bottom: {SPACE["md"]};
   }}
   .hm-page .hm-block-title {{
-    font-size: 13px;
+    font-size: {TYPE["small"]};
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -401,7 +565,7 @@ APP_CSS: Final[str] = f"""
     margin: 0 0 10px 0;
   }}
   .hm-page .hm-concept-label {{
-    font-size: 11px;
+    font-size: {TYPE["label"]};
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -409,24 +573,24 @@ APP_CSS: Final[str] = f"""
     margin: 0 0 2px 0;
   }}
   .hm-page .hm-concept-value {{
-    font-size: 13px;
-    line-height: 1.55;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["snug"]};
     color: {COLORS["text_primary"]};
     margin: 0;
   }}
   .hm-page .hm-ref-caption {{
-    font-size: 12px;
-    line-height: 1.55;
+    font-size: {TYPE["caption"]};
+    line-height: {LINE["snug"]};
     color: {COLORS["text_secondary"]};
     margin: 6px 0 0 0;
   }}
   .hm-page .hm-call-note {{
     background: {COLORS["surface_muted"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 10px;
-    padding: 14px 16px;
-    font-size: 13px;
-    line-height: 1.6;
+    border-radius: {RADIUS["md"]};
+    padding: {SPACE["md"]};
+    font-size: {TYPE["small"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_secondary"]};
     margin: 0 0 {SPACE["md"]} 0;
   }}
@@ -440,7 +604,7 @@ APP_CSS: Final[str] = f"""
   .hm-page .hm-meter {{
     height: 10px;
     border: 1px solid {COLORS["border"]};
-    border-radius: 999px;
+    border-radius: {RADIUS["pill"]};
     background: {COLORS["surface_muted"]};
     overflow: hidden;
     margin: {SPACE["md"]} 0 0 0;
@@ -461,14 +625,15 @@ APP_CSS: Final[str] = f"""
   }}
   .hm-page .hm-status-row p {{
     margin: 0;
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["body"]};
     color: {COLORS["text_primary"]};
   }}
   .hm-page .hm-meter-caption {{
-    font-size: 12px;
+    font-size: {TYPE["caption"]};
     color: {COLORS["text_secondary"]};
     margin: 6px 0 0 0;
+    font-variant-numeric: tabular-nums;
   }}
 
   /* Secondary commentary. The evaluation screen renders four written
@@ -477,16 +642,16 @@ APP_CSS: Final[str] = f"""
   .hm-page .hm-aside {{
     background: {COLORS["surface_muted"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 12px;
-    padding: 16px 18px;
+    border-radius: {RADIUS["lg"]};
+    padding: {SPACE["md"]};
     margin: {SPACE["md"]} 0 {SPACE["md"]} 0;
   }}
   .hm-page .hm-aside .hm-list {{
     margin-top: {SPACE["xs"]};
   }}
   .hm-page .hm-aside .hm-list li {{
-    font-size: 13px;
-    line-height: 1.6;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["body"]};
   }}
 
   /* The leading sentence of a concept card. The three alternatives are read
@@ -494,8 +659,8 @@ APP_CSS: Final[str] = f"""
      the description — is set above the supporting fields rather than level
      with them. */
   .hm-page .hm-concept-lead {{
-    font-size: 14px;
-    line-height: 1.65;
+    font-size: {TYPE["reading"]};
+    line-height: {LINE["reading"]};
     color: {COLORS["text_primary"]};
     margin: 8px 0 {SPACE["md"]} 0;
   }}
@@ -514,12 +679,12 @@ APP_CSS: Final[str] = f"""
   .hm-page .hm-metric {{
     background: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 12px;
-    padding: 14px 16px;
+    border-radius: {RADIUS["lg"]};
+    padding: {SPACE["md"]} {SPACE["md"]};
     height: 100%;
   }}
   .hm-page .hm-metric-label {{
-    font-size: 11px;
+    font-size: {TYPE["label"]};
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -527,9 +692,10 @@ APP_CSS: Final[str] = f"""
     margin: 0 0 6px 0;
   }}
   .hm-page .hm-metric-value {{
-    font-size: 26px;
+    font-size: {TYPE["metric"]};
     font-weight: 600;
-    line-height: 1.15;
+    line-height: {LINE["none"]};
+    letter-spacing: -0.02em;
     color: {COLORS["primary_dark"]};
     margin: 0;
     /* A money value contains a thin/no-break-adjacent comma, and "41.800,00
@@ -538,15 +704,15 @@ APP_CSS: Final[str] = f"""
     white-space: nowrap;
   }}
   .hm-page .hm-metric-note {{
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: {TYPE["caption"]};
+    line-height: {LINE["snug"]};
     color: {COLORS["text_secondary"]};
     margin: 6px 0 0 0;
   }}
   .hm-page .hm-plan-frame {{
     background: {COLORS["surface"]};
     border: 1px solid {COLORS["border"]};
-    border-radius: 12px;
+    border-radius: {RADIUS["lg"]};
     padding: 12px;
     /* The plan is a 640-unit drawing whose labels are 9 user units tall, so its
        legibility is decided by the scale it is rendered at. Fitting it to a
@@ -565,12 +731,12 @@ APP_CSS: Final[str] = f"""
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: {TYPE["caption"]};
     color: {COLORS["text_secondary"]};
     margin: {SPACE["sm"]} 0 0 0;
   }}
   .hm-page .hm-subheading {{
-    font-size: 14px;
+    font-size: {TYPE["reading"]};
     font-weight: 600;
     color: {COLORS["primary_dark"]};
     margin: {SPACE["md"]} 0 {SPACE["xs"]} 0;
@@ -578,13 +744,13 @@ APP_CSS: Final[str] = f"""
   .hm-page .hm-table {{
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: {TYPE["small"]};
     margin: {SPACE["sm"]} 0 {SPACE["md"]} 0;
   }}
   .hm-page .hm-table th {{
     text-align: left;
     font-weight: 600;
-    font-size: 11px;
+    font-size: {TYPE["label"]};
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: {COLORS["text_secondary"]};
@@ -606,8 +772,8 @@ APP_CSS: Final[str] = f"""
     border-left: 3px solid {COLORS["border"]};
     padding: 2px 0 2px 10px;
     margin: 0 0 {SPACE["sm"]} 0;
-    font-size: 13px;
-    line-height: 1.55;
+    font-size: {TYPE["small"]};
+    line-height: {LINE["snug"]};
     color: {COLORS["text_primary"]};
   }}
   .hm-page .hm-issue--error {{
@@ -618,11 +784,210 @@ APP_CSS: Final[str] = f"""
   }}
   .hm-page .hm-issue-kind {{
     display: block;
-    font-size: 10px;
+    font-size: {TYPE["micro"]};
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: {COLORS["text_secondary"]};
+  }}
+
+  /* ---- brand and iconography ----------------------------------------- */
+  /* The inline icon helper. The span sets the box; the SVG inside inherits the
+     colour through `currentColor` and is sized here rather than in markup, so
+     one rule moves every icon in the interface. An icon is always decorative:
+     it sits beside its own text label, so it is `aria-hidden` and never the only
+     carrier of meaning (DESIGN_SYSTEM.md §8, §14).
+
+     The stroke is a product token, not an accent. An icon is drawn in the same
+     ink as the text it belongs to, so it reads as part of the line rather than
+     as a separate coloured object — and so the one colour that must be legible
+     is a token that already clears 4.5:1. */
+  .hm-page .hm-icon {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.15em;
+    height: 1.15em;
+    flex: none;
+    vertical-align: -0.16em;
+    color: {COLORS["primary"]};
+  }}
+  .hm-page .hm-icon svg {{
+    width: 100%;
+    height: 100%;
+    display: block;
+  }}
+  /* The mark that opens the landing hero: the symbol in its own tile, framed in
+     the muted olive of the V2 accents. The frame encodes nothing — the mark is
+     the information, and it is `aria-hidden` because the page title beside it
+     names the product. */
+  .hm-page .hm-mark {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: {RADIUS["xl"]};
+    background: {COLORS["surface_muted"]};
+    border: 1px solid {ACCENT["olive"]};
+    margin-bottom: {SPACE["lg"]};
+    color: {COLORS["primary_dark"]};
+  }}
+  .hm-page .hm-mark svg {{
+    width: 34px;
+    height: 34px;
+    display: block;
+  }}
+  /* A capability row: icon, then the text it belongs to. */
+  .hm-page .hm-capability {{
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }}
+  .hm-page .hm-capability .hm-icon {{
+    margin-top: 3px;
+    width: 18px;
+    height: 18px;
+  }}
+  /* The one place the V2 accent appears: a short terracotta rule beneath an
+     eyebrow. The eyebrow is a short uppercase label ("Stage 2 of 5 · Room") that
+     already says what the page is, so the bar beneath it is pure ornament — it
+     encodes nothing, and removing it loses no information. That is the only way
+     a colour at ~2.4:1 can be used at all without making a claim this project
+     cannot back up with a contrast ratio. */
+  .hm-page .hm-eyebrow::after {{
+    content: "";
+    display: block;
+    width: 28px;
+    height: 2px;
+    margin-top: {SPACE["sm"]};
+    border-radius: 1px;
+    background: {ACCENT["terracotta"]};
+  }}
+
+  /* ---- reference-card hooks (st-key-) -------------------------------- */
+  /* Streamlit gives a container a `st-key-<key>` class when it is opened with
+     `st.container(key=...)`. That is a documented, stable class name — not an
+     internal — so it is the one way to style a Streamlit-owned card without
+     reaching into its DOM.
+
+     The value selector below is an attribute prefix on that documented class
+     (`.st-key-style-*`, `.st-key-palette-*`); the descendants it reaches are
+     plain HTML elements (`img`, `p`, `h3`), never a Streamlit test id or
+     generated `st-emotion-cache-*` name. If any of these rules stops applying
+     the card simply returns to Streamlit's default chrome — which is the
+     "must remain functional if a decorative rule fails" requirement of §13. */
+  [class*="st-key-style-"],
+  [class*="st-key-palette-"] {{
+    padding: 10px 10px 12px 10px;
+    background: {COLORS["surface"]};
+    border-color: {COLORS["border"]};
+    border-radius: {RADIUS["lg"]};
+  }}
+  /* One aspect ratio for every reference image, so a portrait source does not
+     make its card taller than the landscape ones beside it. `object-fit: cover`
+     crops rather than distorts; the caption and the alt text carry the meaning,
+     so nothing is lost by trimming the edges of an illustrative picture. */
+  [class*="st-key-style-"] img,
+  [class*="st-key-palette-"] img {{
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: {RADIUS["sm"]};
+    display: block;
+  }}
+
+  /* ---- concept-card hooks (st-key-) ---------------------------------- */
+  [class*="st-key-hm-concept-"] {{
+    padding: {SPACE["md"]};
+    background: {COLORS["surface"]};
+    border-color: {COLORS["border"]};
+    border-radius: {RADIUS["lg"]};
+  }}
+  /* Three cards in one row must offer three buttons on one line, or the eye
+     reads a shared action whose targets sit at three different heights.
+
+     Streamlit draws each column as a stack of wrappers (`stColumn` ->
+     `stVerticalBlock` -> `stLayoutWrapper` -> the card) and writes an explicit
+     pixel `height` onto `stColumn`. A flex item with a definite height opts out
+     of `align-items: stretch`, which is why each column was only as tall as its
+     own prose and a rule on the card alone changed nothing.
+
+     Clearing that height is the whole fix: the row is already `align-items:
+     stretch`, so the columns then share the tallest card's height. `:has()`
+     reaches that box by naming the child this application minted, so no
+     Streamlit internal is named and the rule cannot leak to another row. If the
+     nesting ever changes the rule simply stops matching and the cards go back to
+     content height — the layout degrades, the content does not.
+
+     Clearing the column's height is necessary but not sufficient: the two
+     wrappers between the column and the card still size to their content, so the
+     card has to be told to fill them as well. Both are named by the same
+     `:has()` chain, and the column itself is the only box in the chain that is
+     *not* given a height — it must stay `auto` for the stretch to apply.
+
+     Once the cards are equal height, `margin-top: auto` on the button's block
+     pushes it to the bottom, so all three buttons start on one line. No text is
+     clipped: the cards grow downwards, and the longest description sets the row
+     height, which is what it already did. */
+  [class*="st-key-hm-concepts-row"] div:has(> [class*="st-key-hm-concept-"]),
+  [class*="st-key-hm-concepts-row"] div:has(> div > [class*="st-key-hm-concept-"]) {{
+    height: 100%;
+  }}
+  [class*="st-key-hm-concepts-row"]
+    div:has(> div > div > [class*="st-key-hm-concept-"]) {{
+    height: auto;
+  }}
+  [class*="st-key-hm-concept-"] {{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }}
+  [class*="st-key-hm-concept-"] > div:last-child {{
+    margin-top: auto;
+  }}
+
+  /* Narrow screens. The hero becomes one column: the photograph is decoration,
+     and on a phone it did nothing but push the primary action past the fold, so
+     it is dropped rather than stacked. The spacing inside the panel tightens for
+     the same reason — the start button has to be reachable without scrolling
+     (DESIGN_SYSTEM.md §12). Type sizes are untouched: a 34px display size is
+     still comfortable at 390px, and shrinking an approved step to buy space
+     would trade the approved hierarchy for a layout convenience. */
+  @media (max-width: 900px) {{
+    /* The media column and every wrapper between it and the row. Written as a
+       depth chain rather than one rule so a change in Streamlit's nesting
+       degrades to "the picture reappears", never to a hidden paragraph. */
+    [class*="st-key-hm-hero-panel"] div:has(> [class*="st-key-hm-hero-media"]),
+    [class*="st-key-hm-hero-panel"]
+      div:has(> div > [class*="st-key-hm-hero-media"]),
+    [class*="st-key-hm-hero-panel"]
+      div:has(> div > div > [class*="st-key-hm-hero-media"]) {{
+      display: none;
+    }}
+    [class*="st-key-hm-hero-panel"] {{
+      padding: {SPACE["lg"]} {SPACE["md"]} {SPACE["md"]} {SPACE["md"]};
+      margin-bottom: {SPACE["md"]};
+    }}
+    /* The mark, the eyebrow and the title each carried a generous bottom margin
+       that reads as air at 1180px and as waste at 390px. */
+    [class*="st-key-hm-hero-panel"] .hm-mark {{
+      width: 48px;
+      height: 48px;
+      margin-bottom: 14px;
+    }}
+    [class*="st-key-hm-hero-panel"] .hm-mark svg {{
+      width: 26px;
+      height: 26px;
+    }}
+    [class*="st-key-hm-hero-panel"] .hm-eyebrow {{
+      margin-bottom: 10px;
+    }}
+    [class*="st-key-hm-hero-panel"] .hm-title {{
+      margin-bottom: 12px;
+    }}
+    [class*="st-key-hm-hero-panel"] .hm-flow {{
+      margin-top: {SPACE["sm"]};
+    }}
   }}
 
   /* Narrow screens: the widest tables (the six-column cost table especially)
@@ -646,19 +1011,19 @@ APP_CSS: Final[str] = f"""
       padding: 8px 10px;
     }}
     .hm-page .hm-stage-name {{
-      font-size: 12px;
+      font-size: {TYPE["caption"]};
     }}
     .hm-page .hm-stage-state {{
-      font-size: 10px;
+      font-size: {TYPE["micro"]};
     }}
     .hm-page .hm-table {{
       display: block;
       overflow-x: auto;
       max-width: 100%;
-      font-size: 11px;
+      font-size: {TYPE["label"]};
     }}
     .hm-page .hm-table th {{
-      font-size: 10px;
+      font-size: {TYPE["micro"]};
       padding: 5px 4px;
     }}
     .hm-page .hm-table td {{
@@ -671,7 +1036,7 @@ APP_CSS: Final[str] = f"""
        phone, so the figure shrinks rather than breaking mid-number or
        overflowing its card. */
     .hm-page .hm-metric-value {{
-      font-size: 21px;
+      font-size: {TYPE["metric_narrow"]};
     }}
   }}
 </style>
@@ -964,3 +1329,110 @@ def call_note(text: str) -> str:
 
 def reference_caption(text: str) -> str:
     return f'<p class="hm-ref-caption">{escape(text)}</p>'
+
+
+# --------------------------------------------------------------------------- #
+# Icons
+# --------------------------------------------------------------------------- #
+
+#: Every icon the interface may draw, by name. The list is closed on purpose: a
+#: name outside it raises at the call site rather than rendering nothing, which
+#: is how a missing icon used to disappear silently.
+ICON_NAMES: Final[tuple[str, ...]] = (
+    "arrow-right",
+    "check",
+    "chevron-left",
+    "download",
+    "evaluation",
+    "home",
+    "image",
+    "info",
+    "menu",
+    "plan",
+    "plus",
+    "projects",
+    "report",
+    "room",
+    "settings",
+    "sliders",
+    "sofa",
+)
+
+
+@lru_cache(maxsize=None)
+def _icon_source(name: str) -> str:
+    """The inner markup of one icon file, ready to inline.
+
+    The pack ships each icon as a standalone SVG with a hardcoded stroke colour.
+    Two edits make it usable here and neither changes the drawing:
+
+    * ``stroke="#252A28"`` becomes ``stroke="currentColor"``, so the icon takes
+      the colour of the element it is placed in. A fixed colour would be wrong
+      in a badge, on the primary button, and beside muted text.
+    * the outer ``<svg>`` wrapper is dropped. The helper supplies its own, with
+      the size and the ``aria-hidden`` the surrounding text implies.
+
+    Reading from disk at call time (once, via the cache) keeps the asset the
+    single source of truth — there is no second copy of the path data in Python.
+    """
+
+    if name not in ICON_NAMES:
+        raise ValueError(f"Unknown icon: {name!r}. Known: {', '.join(ICON_NAMES)}")
+    path = ICONS_DIR / f"{name}.svg"
+    source = path.read_text(encoding="utf-8")
+    inner = source[source.index(">") + 1 : source.rindex("</svg>")]
+    return inner.replace('stroke="#252A28"', 'stroke="currentColor"')
+
+
+def icon(name: str) -> str:
+    """One inline icon, decorative by construction.
+
+    The icon is ``aria-hidden``: it always sits beside a text label that says the
+    same thing, so announcing it again would only make a screen reader repeat
+    itself (DESIGN_SYSTEM.md §14). There is no accessible-name parameter, because
+    an icon that carries meaning on its own is the thing this helper refuses to
+    produce.
+    """
+
+    return (
+        '<span class="hm-icon" aria-hidden="true">'
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
+        f"{_icon_source(name)}"
+        "</svg>"
+        "</span>"
+    )
+
+
+def brand_mark() -> str:
+    """The standalone architectural symbol, for the landing hero."""
+
+    return (
+        '<span class="hm-mark" aria-hidden="true">'
+        '<svg viewBox="0 0 128 128" fill="none">'
+        '<path d="M18 62 64 20l46 42v48H79V77H49v33H18Z" stroke="currentColor" '
+        'stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'
+        "</svg>"
+        "</span>"
+    )
+
+
+def capability(title: str, text: str, *, icon_name: str) -> str:
+    """One capability: an icon, a card heading, and a sentence.
+
+    The icon is decoration; the heading is what a reader navigates by. Both were
+    text-only before, which made three equal-weight cards read as three
+    paragraphs rather than three distinct promises.
+    """
+
+    return (
+        '<div class="hm-card">'
+        '<div class="hm-capability">'
+        f"{icon(icon_name)}"
+        "<div>"
+        f"{card_heading(title)}"
+        f'<p class="hm-card-text">{escape(text)}</p>'
+        "</div>"
+        "</div>"
+        "</div>"
+    )

@@ -203,7 +203,7 @@ def room_diagram_svg(
         f'y2="{window_y2:.1f}" stroke="{theme.COLORS["warning"]}" '
         f'stroke-width="{_WINDOW_STROKE:g}"/>'
         f'<text x="{_BOX_W / 2:.1f}" y="{_BOX_H - 2:.1f}" text-anchor="middle" '
-        f'font-family="Inter, Arial, sans-serif" font-size="9" '
+        f'font-family="{theme.FONT_FAMILY}" font-size="9" '
         f'fill="{theme.COLORS["text_secondary"]}">South &middot; entrance side'
         "</text>"
         "</svg>"
@@ -419,14 +419,14 @@ def furniture_block_svg(
         )
         text = (
             f'<text text-anchor="middle" dominant-baseline="middle" '
-            f'font-family="Inter, Arial, sans-serif" font-size="{_LABEL_FONT_SIZE:g}" '
+            f'font-family="{theme.FONT_FAMILY}" font-size="{_LABEL_FONT_SIZE:g}" '
             f'fill="{theme.COLORS["text_primary"]}">{spans}</text>'
         )
         if show_size:
             text += (
                 f'<text x="{centre_x:.1f}" y="{top_y + label_height:.1f}" '
                 'text-anchor="middle" dominant-baseline="middle" '
-                f'font-family="Inter, Arial, sans-serif" '
+                f'font-family="{theme.FONT_FAMILY}" '
                 f'font-size="{_SIZE_FONT_SIZE:g}" '
                 f'fill="{theme.COLORS["text_secondary"]}">'
                 f"{theme.escape(size_text)}</text>"
@@ -562,7 +562,7 @@ def placement_plan_svg(
         f'x2="{right_edge:.1f}" y2="{top_edge - 22:.1f}" '
         f'stroke="{theme.COLORS["text_secondary"]}" stroke-width="1"/>'
         f'<text x="{(x0 + right_edge) / 2:.1f}" y="{top_edge - 28:.1f}" '
-        'text-anchor="middle" font-family="Inter, Arial, sans-serif" '
+        f'text-anchor="middle" font-family="{theme.FONT_FAMILY}" '
         f'font-size="11" fill="{theme.COLORS["text_secondary"]}">'
         f"{theme.escape(floor_label)}</text>"
         # Length dimension, right of the room.
@@ -571,11 +571,11 @@ def placement_plan_svg(
         f'stroke="{theme.COLORS["text_secondary"]}" stroke-width="1"/>'
         f'<text x="{right_edge + 28:.1f}" '
         f'y="{top_edge + room_h / 2:.1f}" dominant-baseline="middle" '
-        'font-family="Inter, Arial, sans-serif" font-size="11" '
+        f'font-family="{theme.FONT_FAMILY}" font-size="11" '
         f'fill="{theme.COLORS["text_secondary"]}">{theme.escape(area_label)}</text>'
         # The origin, so the coordinate convention is visible in the picture.
         f'<text x="{x0:.1f}" y="{top_edge + room_h + 16:.1f}" '
-        'font-family="Inter, Arial, sans-serif" font-size="9" '
+        f'font-family="{theme.FONT_FAMILY}" font-size="9" '
         f'fill="{theme.COLORS["text_secondary"]}">'
         "Origin (0, 0) &middot; south-west</text>"
         "</svg>"

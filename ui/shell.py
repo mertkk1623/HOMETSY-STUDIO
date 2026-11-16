@@ -163,7 +163,13 @@ def next_action_hint(state: WorkflowState, current_stage: str) -> str:
 
 
 def stage_strip(current_stage: str, state: WorkflowState) -> str:
-    """The strip markup. Each stage names its own state in words, not colour."""
+    """The strip markup. Each stage names its own state in words, not colour.
+
+    The list carries an accessible name because it is the one place a screen
+    reader can answer "where am I in this workflow" in a single stop. Without
+    one it announces as an unlabelled list of five items, which is the same
+    shape as any other list on the page (``DESIGN_SYSTEM.md`` §6.2).
+    """
 
     items = []
     for status in stage_statuses(state, current_stage):
@@ -179,7 +185,10 @@ def stage_strip(current_stage: str, state: WorkflowState) -> str:
             f'<span class="hm-stage-state">{theme.escape(status.label)}</span>'
             "</li>"
         )
-    return f'<ul class="hm-stage-strip">{"".join(items)}</ul>'
+    return (
+        '<ul class="hm-stage-strip" aria-label="Workflow progress">'
+        f'{"".join(items)}</ul>'
+    )
 
 
 def render_shell_header(state: WorkflowState, current_stage: str) -> None:

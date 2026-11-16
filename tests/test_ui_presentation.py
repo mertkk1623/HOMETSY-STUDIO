@@ -15,8 +15,9 @@ from pathlib import Path
 import pytest
 
 from models.schemas import Wall
-from ui import diagram, theme
+from ui import diagram, shell, theme
 from ui.references import load_references
+from workflow.state import WorkflowState
 
 # --------------------------------------------------------------------------- #
 # The SVG
@@ -269,17 +270,78 @@ def test_the_stylesheet_uses_only_approved_colours() -> None:
 
     A stray literal would let the interface drift from ``DESIGN_SYSTEM.md``
     without anyone noticing, because it would look like a deliberate choice.
+
+    ``theme.ACCENT`` is allowed in addition to ``COLORS`` because UI V2 adds two
+    decorative hues from the approved asset pack that the product palette has no
+    slot for. The brief forbids changing ``COLORS`` (it is pinned equal to the
+    PDF palette), so they live in a separate, explicitly non-semantic table —
+    see the two tests below, which keep that table from becoming a second
+    palette or reaching the report.
     """
 
     approved = {value.upper() for value in theme.COLORS.values()} | {
+        value.upper() for value in theme.ACCENT.values()
+    } | {
         "#FFFFFF"  # the on-primary text colour from §3
     }
     for found in re.findall(r"#[0-9A-Fa-f]{6}", theme.APP_CSS):
         assert found.upper() in approved, found
 
 
+def test_the_decorative_accents_are_not_product_tokens() -> None:
+    """``ACCENT`` must stay a decoration table, not a second palette.
+
+    Two ways it could quietly become one, and both are refused here: sharing a
+    value with ``COLORS`` (so the same colour has two names) and sharing a value
+    with the PDF palette. The report must not move because the screen did.
+    """
+
+    from core import report_generator
+
+    product = {value.upper() for value in theme.COLORS.values()}
+    accents = {value.upper() for value in theme.ACCENT.values()}
+    assert not product & accents
+    assert not accents & {value.upper() for value in report_generator.PALETTE.values()}
+    # And no accent is addressable through the product table by key.
+    assert set(theme.ACCENT) & set(theme.COLORS) == set()
+
+
+def test_the_decorative_accents_are_never_used_for_text() -> None:
+    """An accent is a stroke or a hairline, never a text colour.
+
+    ``#BD8065`` on the warm background is about 2.4:1 — well below the 4.5:1
+    this project holds itself to. Reaching ``AA`` would mean either changing the
+    approved hue or pretending the ratio is fine; instead the accents are kept
+    to decoration an adjacent text label already describes, and this test keeps
+    them out of every rule that sets ``color:``.
+    """
+
+    body = re.sub(r"</?style>", "", theme.APP_CSS)
+    accents = {value.lower() for value in theme.ACCENT.values()}
+    for rule in body.split("}"):
+        if "{" not in rule:
+            continue
+        selector, declarations = rule.split("{", 1)
+        for declaration in declarations.split(";"):
+            if ":" not in declaration:
+                continue
+            prop, value = declaration.split(":", 1)
+            # An accent may frame, fill or stroke an element. It may never be
+            # the colour of a glyph.
+            assert not (
+                prop.strip().lower() == "color" and value.strip().lower() in accents
+            ), selector.strip().splitlines()[-1]
+
+
 def test_the_streamlit_theme_config_matches_the_approved_tokens() -> None:
-    """The base page colours are set in Streamlit's own theme, so check them."""
+    """The base page colours are set in Streamlit's own theme, so check them.
+
+    UI V2 adds keys that carry the type stack and the two radii, because those
+    are the only documented way to reach Streamlit's own widgets without
+    targeting their internal DOM. They are asserted against the same token
+    tables the stylesheet uses, so the two can never disagree: a widget and an
+    HTML fragment round by the same amount and are set in the same typeface.
+    """
 
     from pathlib import Path
 
@@ -294,15 +356,105 @@ def test_the_streamlit_theme_config_matches_the_approved_tokens() -> None:
         "backgroundColor": theme.COLORS["background"],
         "secondaryBackgroundColor": theme.COLORS["surface"],
         "textColor": theme.COLORS["text_primary"],
+        "borderColor": theme.COLORS["border"],
     }
     for key, colour in expected.items():
         assert config[key].upper() == colour.upper(), key
 
+    # One type stack for the whole application, declared twice on purpose:
+    # Streamlit owns the widgets, `APP_CSS` owns the HTML, and a mismatch is
+    # exactly the two-typeface bug this pass removes.
+    assert config["font"] == theme.FONT_FAMILY
+    assert config["headingFont"] == theme.FONT_FAMILY
+    assert "font-family: " + theme.FONT_FAMILY in theme.APP_CSS
+
+    # Two radii, one for surfaces and one for controls, shared with the CSS.
+    assert config["baseRadius"] == theme.RADIUS["lg"]
+    assert config["buttonRadius"] == theme.RADIUS["md"]
+    assert config["showWidgetBorder"] is True
+
+
+def test_the_type_scale_is_ordered_from_largest_to_smallest() -> None:
+    """A scale that is not monotonic is not a scale.
+
+    Each step is checked against the next so that a later rule cannot claim to
+    be smaller while rendering larger — the kind of drift that makes a heading
+    hierarchy look accidental without any single rule being obviously wrong.
+    """
+
+    descending = (
+        "display",
+        "title",
+        "metric",
+        "section",
+        "group",
+        "card",
+        "lead",
+        "body",
+        "reading",
+        "small",
+        "caption",
+        "label",
+        "micro",
+    )
+    sizes = [int(theme.TYPE[name].removesuffix("px")) for name in descending]
+    assert sizes == sorted(sizes, reverse=True)
+    assert len(set(sizes)) == len(sizes)
+
+    # ``metric_narrow`` is a phone variant of ``metric``, not a step between
+    # ``section`` and ``group``, so it is excluded above and related here.
+    assert int(theme.TYPE["metric_narrow"].removesuffix("px")) < int(
+        theme.TYPE["metric"].removesuffix("px")
+    )
+
+
+def test_the_radius_scale_is_monotonic() -> None:
+    steps = ("xs", "sm", "md", "lg", "xl")
+    values = [int(theme.RADIUS[name].removesuffix("px")) for name in steps]
+    assert values == sorted(values)
+    assert theme.RADIUS["pill"] == "999px"
+
+
+def test_the_stylesheet_has_no_hardcoded_font_size() -> None:
+    """Every size comes from ``TYPE``, so the scale cannot drift one rule at a time.
+
+    A literal here would be invisible in review: it looks the same as a token
+    once the f-string has been evaluated, so the only way to tell them apart is
+    to compare the rendered values back against the table.
+    """
+
+    body = re.sub(r"/\*.*?\*/", "", theme.APP_CSS, flags=re.DOTALL)
+    sized = re.findall(r"font-size:\s*([^;]+);", body)
+    assert sized
+    for value in sized:
+        assert value.strip() in theme.TYPE.values(), value
+
 
 def test_the_stylesheet_is_scoped_to_the_application_class() -> None:
-    # Every rule must be qualified, so nothing leaks into Streamlit's own DOM.
+    """Every rule is qualified, so nothing leaks into Streamlit's own DOM.
+
+    Two selectors are allowed, and only two:
+
+    * ``.hm-page`` — a class this application renders itself, on every fragment
+      it emits. All element styling lives under it.
+    * ``[class*="st-key-…"]`` — an *attribute* prefix matching the class
+      Streamlit documents for ``st.container(key=...)`` / ``st.button(key=...)``.
+      Keys are minted by this application (``style-*``, ``palette-*``,
+      ``hm-concept-*``), so the selector names a hook we control. It reached
+      Streamlit's rules for that container, not its generated class names, and
+      it fails safe: if the key changes, the card returns to Streamlit's default
+      chrome and nothing breaks.
+
+    What stays forbidden is the real fragility: a bare ``st-emotion-cache-*``
+    hash, a ``[data-testid=…]`` internal, or an unqualified tag/class selector
+    that would restyle unrelated parts of the page.
+    """
+
     body = re.sub(r"</?style>", "", theme.APP_CSS)
-    rules = [rule.strip() for rule in body.split("}") if "{" in rule]
+    # Comments explain why rules exist; they are stripped here so that a comment
+    # that *mentions* a forbidden selector does not read as one.
+    stripped = re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
+    rules = [rule.strip() for rule in stripped.split("}") if "{" in rule]
     assert rules
     for rule in rules:
         selector = rule.split("{")[0].strip()
@@ -312,7 +464,33 @@ def test_the_stylesheet_is_scoped_to_the_application_class() -> None:
             part = part.strip()
             if not part:
                 continue
-            assert part.startswith(".hm-page") or part.startswith("@"), part
+            allowed = (
+                part.startswith(".hm-page")
+                or part.startswith("@")
+                or part.startswith('[class*="st-key-')
+            )
+            assert allowed, part
+
+    # And the forbidden forms appear in no selector.
+    selectors = [rule.split("{")[0] for rule in stripped.split("}") if "{" in rule]
+    joined = " ".join(selectors)
+    assert "st-emotion-cache-" not in joined
+    assert "data-testid" not in joined
+    assert "data-baseweb" not in joined
+
+
+def test_the_progress_strip_carries_an_accessible_name() -> None:
+    """A list of five items with no name is indistinguishable from any other list.
+
+    The strip is the one place a screen reader can answer "where am I" in a
+    single stop, so it is named. Its items still state their own condition in
+    words (see the status-label test below), never through colour alone.
+    """
+
+    markup = shell.stage_strip("Room Setup", WorkflowState())
+    assert markup.startswith('<ul class="hm-stage-strip" aria-label="Workflow progress"')
+    # The name is on the list, not repeated on each item.
+    assert markup.count("aria-label=") == 1
 
 
 def test_every_status_label_exists_in_words() -> None:
