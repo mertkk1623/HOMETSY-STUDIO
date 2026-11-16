@@ -1,0 +1,51 @@
+{
+  "project": "HOMETSY \u2014 Room Intelligence Studio",
+  "source": "Original AI-generated visual reference sheet created in this conversation",
+  "license_note": "No third-party stock imagery used. Review applicable platform terms before external redistribution.",
+  "asset_note": "Cropped reference assets; illustrative design inspiration, not verified products or completed client projects.",
+  "styles": [
+    {
+      "id": "scandinavian",
+      "file": "styles/scandinavian.jpg"
+    },
+    {
+      "id": "modern",
+      "file": "styles/modern.jpg"
+    },
+    {
+      "id": "industrial",
+      "file": "styles/industrial.jpg"
+    },
+    {
+      "id": "bohemian",
+      "file": "styles/bohemian.jpg"
+    },
+    {
+      "id": "minimalist",
+      "file": "styles/minimalist.jpg"
+    },
+    {
+      "id": "contemporary",
+      "file": "styles/contemporary.jpg"
+    }
+  ],
+  "palettes": [
+    {
+      "id": "neutral_harmony",
+      "file": "palettes/neutral_harmony.jpg"
+    },
+    {
+      "id": "natural_earth",
+      "file": "palettes/natural_earth.jpg"
+    },
+    {
+      "id": "modern_contrast",
+      "file": "palettes/modern_contrast.jpg"
+    },
+    {
+      "id": "calm_blue",
+      "file": "palettes/calm_blue.jpg"
+    }
+  ],
+  "mapping_warning": "This sheet does not exactly represent the approved Warm Minimalism and Japandi categories. Do not treat Modern or Minimalist as final equivalents; these two references need replacement before final app integration."
+}

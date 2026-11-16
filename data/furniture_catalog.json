@@ -1,0 +1,208 @@
+{
+  "catalog_version": "1.0",
+  "currency": "TRY",
+  "cost_disclaimer": "Indicative estimates only. These are not verified market prices, supplier quotations or current retail figures. All totals are calculated by the application from these illustrative values.",
+  "dimension_note": "All dimensions are centimeters and describe illustrative default footprints, not verified product specifications.",
+  "items": [
+    {
+      "item_id": "sofa_three_seat",
+      "name": "Three-seat sofa",
+      "category": "Seating",
+      "width_cm": 220,
+      "depth_cm": 90,
+      "indicative_unit_cost": 18500,
+      "supported_room_types": ["Living Room", "Home Office"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "sofa_two_seat",
+      "name": "Two-seat sofa",
+      "category": "Seating",
+      "width_cm": 180,
+      "depth_cm": 90,
+      "indicative_unit_cost": 14200,
+      "supported_room_types": ["Living Room", "Home Office"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "armchair",
+      "name": "Armchair",
+      "category": "Seating",
+      "width_cm": 80,
+      "depth_cm": 80,
+      "indicative_unit_cost": 6800,
+      "supported_room_types": ["Living Room", "Bedroom", "Home Office"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "dining_chair",
+      "name": "Dining chair",
+      "category": "Seating",
+      "width_cm": 45,
+      "depth_cm": 50,
+      "indicative_unit_cost": 2400,
+      "supported_room_types": ["Dining Room", "Home Office"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "coffee_table",
+      "name": "Coffee table",
+      "category": "Tables",
+      "width_cm": 100,
+      "depth_cm": 60,
+      "indicative_unit_cost": 4900,
+      "supported_room_types": ["Living Room"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "side_table",
+      "name": "Side table",
+      "category": "Tables",
+      "width_cm": 45,
+      "depth_cm": 45,
+      "indicative_unit_cost": 2100,
+      "supported_room_types": ["Living Room", "Bedroom"],
+      "drawing_shape": "circle"
+    },
+    {
+      "item_id": "dining_table",
+      "name": "Dining table",
+      "category": "Tables",
+      "width_cm": 140,
+      "depth_cm": 80,
+      "indicative_unit_cost": 11500,
+      "supported_room_types": ["Dining Room"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "desk",
+      "name": "Desk",
+      "category": "Tables",
+      "width_cm": 120,
+      "depth_cm": 60,
+      "indicative_unit_cost": 6400,
+      "supported_room_types": ["Home Office", "Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "tv_unit",
+      "name": "TV unit",
+      "category": "Storage",
+      "width_cm": 180,
+      "depth_cm": 40,
+      "indicative_unit_cost": 7300,
+      "supported_room_types": ["Living Room"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "bookshelf",
+      "name": "Bookshelf",
+      "category": "Storage",
+      "width_cm": 90,
+      "depth_cm": 35,
+      "indicative_unit_cost": 4200,
+      "supported_room_types": ["Living Room", "Home Office", "Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "wardrobe",
+      "name": "Wardrobe",
+      "category": "Storage",
+      "width_cm": 180,
+      "depth_cm": 60,
+      "indicative_unit_cost": 15600,
+      "supported_room_types": ["Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "bed_double",
+      "name": "Double bed",
+      "category": "Sleeping",
+      "width_cm": 160,
+      "depth_cm": 200,
+      "indicative_unit_cost": 21000,
+      "supported_room_types": ["Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "bed_single",
+      "name": "Single bed",
+      "category": "Sleeping",
+      "width_cm": 90,
+      "depth_cm": 200,
+      "indicative_unit_cost": 13400,
+      "supported_room_types": ["Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "bedside_table",
+      "name": "Bedside table",
+      "category": "Storage",
+      "width_cm": 45,
+      "depth_cm": 40,
+      "indicative_unit_cost": 1900,
+      "supported_room_types": ["Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "rug_large",
+      "name": "Large area rug",
+      "category": "Textiles",
+      "width_cm": 200,
+      "depth_cm": 300,
+      "indicative_unit_cost": 5600,
+      "supported_room_types": ["Living Room", "Bedroom"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "floor_lamp",
+      "name": "Floor lamp",
+      "category": "Lighting",
+      "width_cm": 40,
+      "depth_cm": 40,
+      "indicative_unit_cost": 2700,
+      "supported_room_types": ["Living Room", "Bedroom", "Home Office"],
+      "drawing_shape": "circle"
+    },
+    {
+      "item_id": "table_lamp",
+      "name": "Table lamp",
+      "category": "Lighting",
+      "width_cm": 25,
+      "depth_cm": 25,
+      "indicative_unit_cost": 1400,
+      "supported_room_types": ["Bedroom", "Home Office"],
+      "drawing_shape": "circle"
+    },
+    {
+      "item_id": "office_chair",
+      "name": "Office chair",
+      "category": "Seating",
+      "width_cm": 60,
+      "depth_cm": 60,
+      "indicative_unit_cost": 4800,
+      "supported_room_types": ["Home Office"],
+      "drawing_shape": "circle"
+    },
+    {
+      "item_id": "sideboard",
+      "name": "Sideboard",
+      "category": "Storage",
+      "width_cm": 160,
+      "depth_cm": 45,
+      "indicative_unit_cost": 9200,
+      "supported_room_types": ["Dining Room", "Living Room"],
+      "drawing_shape": "rectangle"
+    },
+    {
+      "item_id": "plant_large",
+      "name": "Large potted plant",
+      "category": "Decor",
+      "width_cm": 50,
+      "depth_cm": 50,
+      "indicative_unit_cost": 1200,
+      "supported_room_types": ["Living Room", "Bedroom", "Home Office", "Dining Room"],
+      "drawing_shape": "circle"
+    }
+  ]
+}

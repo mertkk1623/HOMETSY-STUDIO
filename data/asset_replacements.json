@@ -1,0 +1,49 @@
+{
+  "replacements_version": "1.0",
+  "project": "HOMETSY — Room Intelligence Studio",
+  "purpose": "Records how the Phase 2 correction pack resolved the previously missing and provisional reference categories.",
+  "manifest": "assets/source_pack/Replacements/asset_manifest.json",
+  "note": "Source files are preserved unmodified. Files under assets/images/ are byte-identical copies used by the application.",
+  "resolved": [
+    {
+      "category": "Warm Minimalism",
+      "previous_status": "missing",
+      "new_status": "available",
+      "source_image": "assets/source_pack/Replacements/warm_minimalism.jpg",
+      "application_image": "assets/images/styles/warm_minimalism.jpg",
+      "note": "Replaces the previously unmapped category. Not derived from minimalist.jpg."
+    },
+    {
+      "category": "Japandi",
+      "previous_status": "missing",
+      "new_status": "available",
+      "source_image": "assets/source_pack/Replacements/japandi.jpg",
+      "application_image": "assets/images/styles/japandi.jpg",
+      "note": "Fills the category that had no reference in the original pack."
+    },
+    {
+      "category": "Natural Materials",
+      "previous_status": "provisional",
+      "new_status": "available",
+      "source_image": "assets/source_pack/Replacements/natural_materials.jpg",
+      "application_image": "assets/images/palettes/natural_materials.jpg",
+      "note": "Supersedes the calm_blue.jpg provisional mapping, which is retained but unmapped."
+    }
+  ],
+  "retained_unmapped": [
+    {
+      "source_image": "assets/source_pack/palettes/calm_blue.jpg",
+      "why": "Kept in the source pack; no longer mapped to Natural Materials."
+    }
+  ],
+  "retained_excluded": [
+    {
+      "source_image": "assets/source_pack/styles/modern.jpg",
+      "why": "Not an approved V1 style category."
+    },
+    {
+      "source_image": "assets/source_pack/styles/minimalist.jpg",
+      "why": "Not an approved V1 style category; must not substitute for Warm Minimalism."
+    }
+  ]
+}

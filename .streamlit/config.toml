@@ -1,0 +1,18 @@
+[theme]
+base = "light"
+primaryColor = "#4B5147"
+backgroundColor = "#F6F4EF"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#292B27"
+font = "sans serif"
+baseFontSize = 15
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# The deployment toolbar is not part of the product experience.
+toolbarMode = "minimal"

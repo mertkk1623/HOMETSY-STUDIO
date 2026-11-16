@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Test, lint and type-check caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Generated reports: produced at runtime, reproducible from saved project data
+output/reports/
+
+# Local runtime artifacts: logs, temp files and local databases
+*.log
+*.tmp
+*.bak
+*.orig
+*.rej
+*.sqlite
+*.sqlite3
+*.db
+
+# Browser automation profiles and test residue
+.playwright/
+browser-profile/
+chromium-profile/
+playwright-report/
+test-results/
+
+# Operating system and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

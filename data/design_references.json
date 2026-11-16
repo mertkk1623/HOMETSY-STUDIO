@@ -1,0 +1,154 @@
+{
+  "references_version": "1.0",
+  "project": "HOMETSY — Room Intelligence Studio",
+  "purpose": "Application-facing metadata for the local style and palette reference library. Phase 2 defines identifiers and file paths only; no image analysis is performed or implied.",
+  "source_pack": {
+    "manifest": "assets/source_pack/asset_manifest.json",
+    "styles_dir": "assets/source_pack/styles",
+    "palettes_dir": "assets/source_pack/palettes",
+    "replacements_dir": "assets/source_pack/Replacements",
+    "replacements_manifest": "assets/source_pack/Replacements/asset_manifest.json",
+    "note": "The source pack is preserved unmodified. Files under assets/images/ are byte-identical copies used by the application."
+  },
+  "status_vocabulary": {
+    "available": "An approved local image is mapped to the category and may be displayed.",
+    "approved": "An approved local image is mapped to the category and may be displayed (original source pack).",
+    "provisional": "A local image is mapped but not yet approved for final integration.",
+    "missing": "No approved image exists; the category must not display a substitute."
+  },
+  "licensing": {
+    "origin": "Original AI-generated visual reference sheet created for this project.",
+    "third_party_stock": false,
+    "attribution_required": false,
+    "redistribution_note": "Review applicable platform terms before external redistribution.",
+    "asset_note": "Illustrative design inspiration, not verified products or completed client projects."
+  },
+  "ai_usage_note": "The text-only model receives the selected category identifiers and their textual descriptions. It never receives or analyses the image files.",
+  "styles": [
+    {
+      "id": "scandinavian",
+      "design_style": "Scandinavian",
+      "display_name": "Scandinavian",
+      "description": "Bright, natural and minimal. Light woods, soft textiles and generous daylight.",
+      "image": "assets/images/styles/scandinavian.jpg",
+      "source_image": "assets/source_pack/styles/scandinavian.jpg",
+      "status": "approved",
+      "status_note": "Matches the approved Scandinavian category."
+    },
+    {
+      "id": "contemporary",
+      "design_style": "Contemporary",
+      "display_name": "Contemporary",
+      "description": "Stylish, balanced and current. Sculptural lighting with refined, muted upholstery.",
+      "image": "assets/images/styles/contemporary.jpg",
+      "source_image": "assets/source_pack/styles/contemporary.jpg",
+      "status": "approved",
+      "status_note": "Matches the approved Contemporary category."
+    },
+    {
+      "id": "industrial",
+      "design_style": "Industrial",
+      "display_name": "Industrial",
+      "description": "Raw, authentic and urban. Exposed brick, black metal framing and aged leather.",
+      "image": "assets/images/styles/industrial.jpg",
+      "source_image": "assets/source_pack/styles/industrial.jpg",
+      "status": "approved",
+      "status_note": "Matches the approved Industrial category."
+    },
+    {
+      "id": "bohemian",
+      "design_style": "Bohemian",
+      "display_name": "Bohemian",
+      "description": "Warm, eclectic and personal. Rattan, layered pattern and collected objects.",
+      "image": "assets/images/styles/bohemian.jpg",
+      "source_image": "assets/source_pack/styles/bohemian.jpg",
+      "status": "approved",
+      "status_note": "Matches the approved Bohemian category."
+    },
+    {
+      "id": "warm_minimalism",
+      "design_style": "Warm Minimalism",
+      "display_name": "Warm Minimalism",
+      "description": "Quiet, warm and pared back. Soft neutral tones, few objects and calm surfaces.",
+      "image": "assets/images/styles/warm_minimalism.jpg",
+      "source_image": "assets/source_pack/Replacements/warm_minimalism.jpg",
+      "status": "available",
+      "status_note": "Purpose-made replacement reference supplied for this category in the Phase 2 correction pack. Matches the approved Warm Minimalism direction."
+    },
+    {
+      "id": "japandi",
+      "design_style": "Japandi",
+      "display_name": "Japandi",
+      "description": "Japanese restraint with Scandinavian warmth. Low profiles, natural texture and negative space.",
+      "image": "assets/images/styles/japandi.jpg",
+      "source_image": "assets/source_pack/Replacements/japandi.jpg",
+      "status": "available",
+      "status_note": "Purpose-made replacement reference supplied for this category in the Phase 2 correction pack. Matches the approved Japandi direction."
+    }
+  ],
+  "palettes": [
+    {
+      "id": "warm_neutral",
+      "palette_direction": "Warm Neutral",
+      "display_name": "Warm Neutral",
+      "description": "Beige, cream and greige with natural wood.",
+      "image": "assets/images/palettes/warm_neutral.jpg",
+      "source_image": "assets/source_pack/palettes/neutral_harmony.jpg",
+      "swatches": ["#EBE4DA", "#CBB8A1", "#B7A38E", "#816246"],
+      "status": "approved",
+      "status_note": "Strong match. Material board and swatches align with the Warm Neutral direction."
+    },
+    {
+      "id": "earthy",
+      "palette_direction": "Earthy",
+      "display_name": "Earthy",
+      "description": "Olive, terracotta and warm wood with tactile natural texture.",
+      "image": "assets/images/palettes/earthy.jpg",
+      "source_image": "assets/source_pack/palettes/natural_earth.jpg",
+      "swatches": ["#817B51", "#D5C7B2", "#B87955", "#7E5538"],
+      "status": "approved",
+      "status_note": "Strong match. Olive, sand, terracotta and wood align with the Earthy direction."
+    },
+    {
+      "id": "cool_modern",
+      "palette_direction": "Cool Modern",
+      "display_name": "Cool Modern",
+      "description": "Charcoal, grey and off-white with marble and walnut.",
+      "image": "assets/images/palettes/cool_modern.jpg",
+      "source_image": "assets/source_pack/palettes/modern_contrast.jpg",
+      "swatches": ["#3A3A3A", "#999691", "#EDE9E3", "#674328"],
+      "status": "approved",
+      "status_note": "Strong match. Charcoal, grey and off-white align with the Cool Modern direction."
+    },
+    {
+      "id": "natural_materials",
+      "palette_direction": "Natural Materials",
+      "display_name": "Natural Materials",
+      "description": "Oak, rattan and linen surfaces with a calm, tactile natural finish.",
+      "image": "assets/images/palettes/natural_materials.jpg",
+      "source_image": "assets/source_pack/Replacements/natural_materials.jpg",
+      "swatches": ["#ECD4B2", "#D7AD73", "#8D8970", "#B8AE95"],
+      "status": "available",
+      "status_note": "Purpose-made replacement reference supplied in the Phase 2 correction pack. It replaces the previous provisional calm_blue.jpg mapping, which was a better fit for a colour-led direction."
+    }
+  ],
+  "excluded_source_assets": [
+    {
+      "source_image": "assets/source_pack/styles/modern.jpg",
+      "displayed_label": "Modern",
+      "reason": "Not an approved V1 style category. The source manifest rules out treating it as a final equivalent."
+    },
+    {
+      "source_image": "assets/source_pack/styles/minimalist.jpg",
+      "displayed_label": "Minimalist",
+      "reason": "Not an approved V1 style category. The source manifest rules out treating it as a substitute for Warm Minimalism."
+    }
+  ],
+  "unmapped_source_assets": [
+    {
+      "source_image": "assets/source_pack/palettes/calm_blue.jpg",
+      "displayed_label": "Calm Blue",
+      "reason": "Retained in the source pack but no longer mapped to any palette category. It previously backed Natural Materials on a provisional basis and has been superseded by the purpose-made Natural Materials board."
+    }
+  ]
+}

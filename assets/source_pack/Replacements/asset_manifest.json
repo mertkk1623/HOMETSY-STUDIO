@@ -1,0 +1,27 @@
+{
+  "project": "HOMETSY \u2014 Room Intelligence Studio",
+  "purpose": "Phase 2 replacement visual assets",
+  "source": "Original AI-generated illustrated visual reference sheet created for this project",
+  "assets": [
+    {
+      "file": "warm_minimalism.jpg",
+      "category": "Warm Minimalism",
+      "status": "replacement reference"
+    },
+    {
+      "file": "japandi.jpg",
+      "category": "Japandi",
+      "status": "replacement reference"
+    },
+    {
+      "file": "natural_materials.jpg",
+      "category": "Natural Materials",
+      "status": "replacement reference"
+    }
+  ],
+  "notes": [
+    "These are illustrative reference crops, not photographs of real projects or products.",
+    "Use only for the matching category cards; do not infer product specifications or prices.",
+    "The Natural Materials image replaces the provisional calm_blue mapping."
+  ]
+}
